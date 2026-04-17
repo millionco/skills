@@ -571,6 +571,8 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
     if (!f.keyboard) return;
 
     function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement | null)?.isContentEditable) return;
       if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
         setHasUsedArrows(true);
       }
@@ -652,13 +654,11 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
       }
     }
 
-    const el = containerRef.current;
-    if (!el) return;
-    el.addEventListener("keydown", onKeyDown);
-    el.addEventListener("keyup", onKeyUp);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
     return () => {
-      el.removeEventListener("keydown", onKeyDown);
-      el.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
       clearTimeout(budgeTimeoutRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
