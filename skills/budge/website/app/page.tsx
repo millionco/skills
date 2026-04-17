@@ -25,7 +25,7 @@ export default function HomePage() {
             <li>Enter to copy the prompt to clipboard</li>
           </ul>
           <div className="[letter-spacing:0em] [white-space-collapse:preserve] font-medium text-[15px]/[22px] text-[#707070] mt-4">
-            Works in Claude Code, Codex, Cursor. Fully open source.
+            Works in Claude Code, Codex, Cursor.
           </div>
         </div>
         <div className="relative w-full max-w-112.75 min-w-0 px-4 sm:px-0 pb-6">
