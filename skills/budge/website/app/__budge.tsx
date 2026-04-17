@@ -49,7 +49,6 @@ const OREO_SPRITES_DOWN: [number, number][] = [
 ];
 let lastOreoIdxUp = 0;
 let lastOreoIdxDown = 0;
-const OREO_BOUNDARY_MIN: [number, number] = [24000, 145];
 const OREO_CONFIRM: [number, number] = [8000, 112];
 
 function loadOreoBuffer() {
@@ -106,26 +105,6 @@ function playTick(held = false, up = true) {
   lastTickTime = now;
   const ctx = getAudioCtx();
   scheduleTick(ctx.currentTime, held ? 0.3 : 0.55, up);
-}
-
-let atBoundary = false;
-
-function playBoundary() {
-  if (atBoundary) return;
-  atBoundary = true;
-  const ctx = getAudioCtx();
-  loadOreoBuffer();
-  if (!oreoBuffer) return;
-  const sprite = OREO_BOUNDARY_MIN;
-  const offset = sprite[0] / 1000;
-  const halfDur = sprite[1] / 1000 / 2;
-  const src = ctx.createBufferSource();
-  src.buffer = oreoBuffer;
-  const gain = ctx.createGain();
-  gain.gain.value = 0.55;
-  src.connect(gain);
-  gain.connect(ctx.destination);
-  src.start(ctx.currentTime, offset, halfDur);
 }
 
 function playDoubleTick(up = true) {
@@ -371,8 +350,6 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
   const [dismissed, setDismissed] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [shaking, setShaking] = useState(false);
-  const shakeTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [barVisible, setBarVisible] = useState(false);
   const [barMounted, setBarMounted] = useState(false);
   const exitTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -382,11 +359,6 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
   const [activeKey, setActiveKey] = useState<"up" | "down" | null>(null);
   const [isNudging, setIsNudging] = useState(false);
   const [barHovered, setBarHovered] = useState(false);
-  const [boundaryLabel, setBoundaryLabel] = useState<"Min" | "Max" | null>(null);
-  const [boundaryLabelVisible, setBoundaryLabelVisible] = useState(false);
-  const boundaryHitsRef = useRef(0);
-  const boundaryLabelTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const boundaryLabelExitRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const holdIntervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const holdTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -568,11 +540,8 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
       let next: string;
 
       if (isOptions) {
-        optionIndexRef.current = clamp(
-          optionIndexRef.current + direction,
-          0,
-          config!.options!.length - 1
-        );
+        const len = config!.options!.length;
+        optionIndexRef.current = ((optionIndexRef.current + direction) % len + len) % len;
         next = String(config!.options![optionIndexRef.current]);
         playTick(held, direction > 0);
       } else if (isColor) {
@@ -583,46 +552,12 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
       } else {
         const s = step >= 1 ? 1 : step;
         const mult = shift ? 10 : 1;
-        const prev = numericRef.current;
-        numericRef.current =
-          Math.round((numericRef.current + direction * s * mult) * 1000) / 1000;
-        numericRef.current = clamp(numericRef.current, min, max);
-        if (numericRef.current === prev) {
-          setShaking(true);
-          clearTimeout(shakeTimeoutRef.current);
-          shakeTimeoutRef.current = setTimeout(() => setShaking(false), 300);
-          boundaryHitsRef.current++;
-          if (boundaryHitsRef.current >= 20) {
-            const label = direction > 0 ? "Max" : "Min";
-            setBoundaryLabel(label);
-            clearTimeout(boundaryLabelTimeoutRef.current);
-            clearTimeout(boundaryLabelExitRef.current);
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => setBoundaryLabelVisible(true));
-            });
-            boundaryLabelTimeoutRef.current = setTimeout(() => {
-              setBoundaryLabelVisible(false);
-              boundaryLabelExitRef.current = setTimeout(() => setBoundaryLabel(null), 300);
-            }, 400);
-          }
-          playBoundary();
-          next = unitRef.current
-            ? numericRef.current + unitRef.current
-            : String(numericRef.current);
-          applyPreview(targetEl!, next);
-          currentValueRef.current = next;
-          setCurrentValue(next);
-          return;
-        }
-        atBoundary = false;
-        boundaryHitsRef.current = 0;
-        if (boundaryLabel) {
-          setBoundaryLabelVisible(false);
-          clearTimeout(boundaryLabelTimeoutRef.current);
-          clearTimeout(boundaryLabelExitRef.current);
-          boundaryLabelExitRef.current = setTimeout(() => setBoundaryLabel(null), 300);
-        }
-        setShaking(false);
+        const delta = direction * s * mult;
+        let candidate = Math.round((numericRef.current + delta) * 1000) / 1000;
+        const period = max - min + s;
+        while (candidate > max + 1e-9) candidate -= period;
+        while (candidate < min - 1e-9) candidate += period;
+        numericRef.current = Math.round(candidate * 1000) / 1000;
         next = unitRef.current
           ? numericRef.current + unitRef.current
           : String(numericRef.current);
@@ -758,14 +693,9 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
           stopHold={stopHold}
           confirmed={confirmed}
           visible={barVisible}
-          shaking={shaking}
           barHovered={barHovered}
           onBarHover={setBarHovered}
           propertyLabel={config?.property}
-          atMin={numericRef.current <= (config?.min ?? -9999)}
-          atMax={numericRef.current >= (config?.max ?? 9999)}
-          boundaryLabel={boundaryLabel}
-          boundaryLabelVisible={boundaryLabelVisible}
           unit={unitRef.current}
         />
       )}
@@ -1055,14 +985,9 @@ function Bar({
   stopHold,
   confirmed,
   visible,
-  shaking,
   barHovered,
   onBarHover,
   propertyLabel,
-  atMin,
-  atMax,
-  boundaryLabel,
-  boundaryLabelVisible,
   unit,
 }: {
   value: string;
@@ -1073,14 +998,9 @@ function Bar({
   stopHold: () => void;
   confirmed: boolean;
   visible: boolean;
-  shaking: boolean;
   barHovered: boolean;
   onBarHover: (v: boolean) => void;
   propertyLabel?: string;
-  atMin: boolean;
-  atMax: boolean;
-  boundaryLabel: "Min" | "Max" | null;
-  boundaryLabelVisible: boolean;
   unit: string;
 }) {
   const expandTransition =
@@ -1125,9 +1045,6 @@ function Bar({
           : expanded || barHovered
             ? "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), bottom 0.5s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.15s ease"
             : "transform 0.2s cubic-bezier(0.32, 0.72, 0, 1), bottom 0.5s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease",
-        animation: shaking
-          ? "__budge-shake 0.15s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite"
-          : "none",
       }}
     >
       {propertyLabel && expanded && (
@@ -1154,28 +1071,6 @@ function Bar({
             whiteSpace: "nowrap",
           }}>
             {propertyLabel}
-          </span>
-        </div>
-      )}
-      {boundaryLabel && (
-        <div style={{
-          position: "absolute",
-          bottom: "100%",
-          left: "50%",
-          transform: "translateX(-50%)",
-          pointerEvents: "none",
-          paddingBottom: 10,
-          opacity: boundaryLabelVisible ? 1 : 0,
-          transition: boundaryLabelVisible ? "opacity 0.15s ease" : "opacity 0.2s ease",
-        }}>
-          <span style={{
-            fontFamily: FONT,
-            fontSize: 12,
-            fontWeight: 500,
-            color: "#999",
-            whiteSpace: "nowrap",
-          }}>
-            {boundaryLabel}
           </span>
         </div>
       )}
@@ -1227,7 +1122,7 @@ function Bar({
                 animation="snappy"
                 stagger={0}
                 style={{
-                  color: shaking ? "#A7A7A7" : "#fff",
+                  color: "#fff",
                   fontFamily: FONT,
                   fontWeight: 500,
                   fontSize: 14.5,
@@ -1241,7 +1136,7 @@ function Bar({
               </Calligraph>
               {displayUnit && (
                 <span style={{
-                  color: shaking ? "#A7A7A7" : "#fff",
+                  color: "#fff",
                   fontFamily: FONT,
                   fontWeight: 500,
                   fontSize: 11,
@@ -1257,14 +1152,12 @@ function Bar({
             <Arrow
               down
               active={activeKey === "down"}
-              disabled={shaking && atMin}
               onPointerDown={() => startHold("down")}
               onPointerUp={stopHold}
               onPointerLeave={stopHold}
             />
             <Arrow
               active={activeKey === "up"}
-              disabled={shaking && atMax}
               onPointerDown={() => startHold("up")}
               onPointerUp={stopHold}
               onPointerLeave={stopHold}

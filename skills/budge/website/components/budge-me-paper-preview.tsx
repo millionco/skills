@@ -73,6 +73,14 @@ function nextTokenValue(tokens: Token[], current: number, direction: 1 | -1): nu
   }
 }
 
+// Wrap v into [min, max] so overshoots loop around. Assumes unit step — the
+// period is (max - min + 1) so max+1 → min and min-1 → max.
+function wrapValue(v: number, min: number, max: number): number {
+  const period = max - min + 1;
+  const offset = ((v - min) % period + period) % period;
+  return min + offset;
+}
+
 // ---------------------------------------------------------------------------
 // Audio — subtle haptic tick via Web Audio API
 // ---------------------------------------------------------------------------
@@ -88,7 +96,6 @@ function getAudioCtx() {
 
 let oreoBuffer: AudioBuffer | null = null;
 let oreoLoading = false;
-let lastAlertTime = 0;
 
 const OREO_SPRITES_UP: [number, number][] = [
   [22000, 103], [12000, 109], [0, 120],
@@ -98,8 +105,6 @@ const OREO_SPRITES_DOWN: [number, number][] = [
 ];
 let lastOreoIdxUp = 0;
 let lastOreoIdxDown = 0;
-const OREO_BOUNDARY_MAX: [number, number] = [10000, 135];
-const OREO_BOUNDARY_MIN: [number, number] = [24000, 145];
 
 function loadOreoBuffer() {
   if (oreoBuffer || oreoLoading) return;
@@ -158,26 +163,6 @@ function playTick(held = false, up = true) {
 
   const ctx = getAudioCtx();
   scheduleTick(ctx.currentTime, held ? 0.3 : 0.55, up);
-}
-
-let atBoundary = false;
-
-function playBoundary(isMax: boolean) {
-  if (atBoundary) return;
-  atBoundary = true;
-  const ctx = getAudioCtx();
-  loadOreoBuffer();
-  if (!oreoBuffer) return;
-  const sprite = OREO_BOUNDARY_MIN;
-  const offset = sprite[0] / 1000;
-  const halfDur = sprite[1] / 1000 / 2;
-  const src = ctx.createBufferSource();
-  src.buffer = oreoBuffer;
-  const gain = ctx.createGain();
-  gain.gain.value = 0.55;
-  src.connect(gain);
-  gain.connect(ctx.destination);
-  src.start(ctx.currentTime, offset, halfDur);
 }
 
 function playDoubleTick(up = true) {
@@ -298,18 +283,10 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
   const slideValuesRef = useRef<number[]>(SLIDES.map(s => s.original));
   const containerRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const [shaking, setShaking] = useState(false);
-  const [boundaryLabel, setBoundaryLabel] = useState<"Min" | "Max" | null>(null);
-  const [boundaryLabelVisible, setBoundaryLabelVisible] = useState(false);
-  const boundaryHitsRef = useRef(0);
   const [slideRangeVisible, setSlideRangeVisible] = useState(false);
   const [slideRangeIdle, setSlideRangeIdle] = useState(true);
-  const [hasUsedArrows, setHasUsedArrows] = useState(false);
   const [barHovered, setBarHovered] = useState(false);
   const slideRangeTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const boundaryLabelTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const boundaryLabelExitRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const shakeTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const budgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const confirmedTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const digitBufferRef = useRef("");
@@ -396,14 +373,12 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
     setValue(restored);
     setTypedRaw(null);
     setIsBudging(false);
-    setShaking(false);
     setConfirmed(false);
     setShowPrompt(false);
     setActiveKey(null);
     digitBufferRef.current = "";
     clearTimeout(digitTimeoutRef.current);
     clearTimeout(budgeTimeoutRef.current);
-    clearTimeout(shakeTimeoutRef.current);
     clearTimeout(confirmedTimeoutRef.current);
 
     clearTimeout(slideRangeTimeoutRef.current);
@@ -424,10 +399,10 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
     digitBufferRef.current = "";
     if (isNaN(num)) return;
     const cs = SLIDES[slideRef.current];
-    const clamped = Math.min(cs.max, Math.max(cs.min, num));
-    if (clamped !== valueRef.current) {
-      valueRef.current = clamped;
-      setValue(clamped);
+    const wrapped = wrapValue(num, cs.min, cs.max);
+    if (wrapped !== valueRef.current) {
+      valueRef.current = wrapped;
+      setValue(wrapped);
       setIsBudging(true);
       clearTimeout(budgeTimeoutRef.current);
       budgeTimeoutRef.current = setTimeout(() => setIsBudging(false), 600);
@@ -441,48 +416,20 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
     let next: number;
     if (snapToTokensRef.current && cs.tokens && !shift) {
       const tokenNext = nextTokenValue(cs.tokens, valueRef.current, direction > 0 ? 1 : -1);
-      next = tokenNext ?? (direction > 0 ? cs.max + 1 : cs.min - 1);
+      // No more bounds — loop: past last token, pick first (and vice versa).
+      if (tokenNext !== null) {
+        next = tokenNext;
+      } else {
+        const sorted = [...cs.tokens].sort((a, b) => a.value - b.value);
+        next = direction > 0 ? sorted[0].value : sorted[sorted.length - 1].value;
+      }
     } else {
-      next = valueRef.current + direction * mult;
+      next = wrapValue(valueRef.current + direction * mult, cs.min, cs.max);
     }
-    if (next > cs.max || next < cs.min) {
-      if (f.boundaryShake) {
-        setShaking(true);
-        clearTimeout(shakeTimeoutRef.current);
-        shakeTimeoutRef.current = setTimeout(() => setShaking(false), 300);
-      }
-      boundaryHitsRef.current++;
-      if (boundaryHitsRef.current >= 20) {
-        const label = next > cs.max ? "Max" : "Min";
-        setBoundaryLabel(label);
-        clearTimeout(boundaryLabelTimeoutRef.current);
-        clearTimeout(boundaryLabelExitRef.current);
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            setBoundaryLabelVisible(true);
-          });
-        });
-        boundaryLabelTimeoutRef.current = setTimeout(() => {
-          setBoundaryLabelVisible(false);
-          boundaryLabelExitRef.current = setTimeout(() => setBoundaryLabel(null), 300);
-        }, 400);
-      }
-      if (soundOn) playBoundary(next > cs.max);
-      return;
-    }
-    atBoundary = false;
-    boundaryHitsRef.current = 0;
-    if (boundaryLabel) {
-      setBoundaryLabelVisible(false);
-      clearTimeout(boundaryLabelTimeoutRef.current);
-      clearTimeout(boundaryLabelExitRef.current);
-      boundaryLabelExitRef.current = setTimeout(() => setBoundaryLabel(null), 300);
-    }
-    setShaking(false);
     valueRef.current = next;
     setValue(valueRef.current);
     if (soundOn) playTick(held, direction > 0);
-  }, [f.shiftStep, f.boundaryShake, soundOn]);
+  }, [f.shiftStep, soundOn]);
 
   const triggerBudge = useCallback(
     (dir: "up" | "down") => {
@@ -573,9 +520,6 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
     function onKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement | null)?.isContentEditable) return;
-      if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        setHasUsedArrows(true);
-      }
       if (e.key === "ArrowUp") {
         e.preventDefault();
         stepRef.current(1, e.shiftKey, e.repeat);
@@ -616,15 +560,10 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
           digitBufferRef.current = "";
           const ds2 = SLIDES[slideRef.current];
           if (!isNaN(final) && (final < ds2.min || final > ds2.max)) {
-            const clamped = Math.min(ds2.max, Math.max(ds2.min, final));
-            valueRef.current = clamped;
-            setValue(clamped);
+            const wrapped = wrapValue(final, ds2.min, ds2.max);
+            valueRef.current = wrapped;
+            setValue(wrapped);
             setTypedRaw(null);
-            if (f.boundaryShake) {
-              setShaking(true);
-              clearTimeout(shakeTimeoutRef.current);
-              shakeTimeoutRef.current = setTimeout(() => setShaking(false), 300);
-            }
             budgeTimeoutRef.current = setTimeout(() => setIsBudging(false), 600);
           } else {
             setTypedRaw(null);
@@ -759,8 +698,6 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
     const n = parseInt(typedRaw, 10);
     return !isNaN(n) && (n < s.min || n > s.max);
   })();
-  const atMin = value <= s.min;
-  const atMax = value >= s.max;
   const isColorSlide = slide === 3;
   const targetColor = `hsl(${value}, 70%, 55%)`;
   const budgeY = 0;
@@ -927,9 +864,6 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
                     ? "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease"
                     : "transform 0.2s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease")
               : "opacity 0.3s ease",
-            animation: shaking
-              ? "__budge-shake 0.15s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite"
-              : "none",
           }}
         >
           <div style={{
@@ -1007,7 +941,7 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
                       animation="snappy"
                       stagger={0}
                       style={{
-                        color: shaking || typedOutOfRange ? "#A7A7A7" : "#fff",
+                        color: typedOutOfRange ? "#A7A7A7" : "#fff",
                         fontFamily: FONT,
                         fontWeight: 500,
                         fontSize: 14.5,
@@ -1020,7 +954,7 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
                       {displayNum}
                     </Calligraph>
                     <span style={{
-                      color: shaking || typedOutOfRange ? "#A7A7A7" : "#fff",
+                      color: typedOutOfRange ? "#A7A7A7" : "#fff",
                       fontFamily: FONT,
                       fontWeight: 500,
                       fontSize: 11,
@@ -1047,7 +981,7 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
                   <span style={{ display: "inline-flex", alignItems: "baseline", minWidth: 44, textAlign: "left" }}>
                     <span
                       style={{
-                        color: shaking || typedOutOfRange ? "#A7A7A7" : "#fff",
+                        color: typedOutOfRange ? "#A7A7A7" : "#fff",
                         fontFamily: FONT,
                         fontWeight: 500,
                         fontSize: 14.5,
@@ -1060,7 +994,7 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
                       {displayNum}
                     </span>
                     <span style={{
-                      color: shaking || typedOutOfRange ? "#A7A7A7" : "#fff",
+                      color: typedOutOfRange ? "#A7A7A7" : "#fff",
                       fontFamily: FONT,
                       fontWeight: 500,
                       fontSize: 11,
@@ -1091,7 +1025,6 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
                   down
                   active={f.arrowBounce ? activeKey === "down" : false}
                   bounce={!isMobile}
-                  disabled={shaking && atMin}
                   onPointerDown={isMobile ? undefined : () => startHold("down")}
                   onPointerUp={isMobile ? undefined : stopHold}
                   onPointerLeave={isMobile ? undefined : stopHold}
@@ -1100,7 +1033,6 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
                 <Arrow
                   active={f.arrowBounce ? activeKey === "up" : false}
                   bounce={!isMobile}
-                  disabled={shaking && atMax}
                   onPointerDown={isMobile ? undefined : () => startHold("up")}
                   onPointerUp={isMobile ? undefined : stopHold}
                   onPointerLeave={isMobile ? undefined : stopHold}

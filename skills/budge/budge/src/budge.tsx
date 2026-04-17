@@ -134,6 +134,14 @@ function nextTokenIndex(tokens: BudgeToken[], value: number, direction: number, 
   }
 }
 
+// Wrap v into [min, max] so overshoots loop around. Assumes unit step — the
+// period is (max - min + 1) so max+1 → min and min-1 → max.
+function wrapValue(v: number, min: number, max: number): number {
+  const period = max - min + 1;
+  const offset = ((v - min) % period + period) % period;
+  return min + offset;
+}
+
 const DEFAULT_SLIDES: BudgeSlide[] = [
   { label: "font size", property: "font-size", min: 32, max: 86, value: 61, original: 61, unit: "px" },
   { label: "opacity", property: "opacity", min: 0, max: 100, value: 100, original: 100, unit: "%" },
@@ -156,7 +164,6 @@ function getAudioCtx() {
 
 let oreoBuffer: AudioBuffer | null = null;
 let oreoLoading = false;
-let lastAlertTime = 0;
 
 const OREO_SPRITES_UP: [number, number][] = [
   [22000, 103], [12000, 109], [0, 120],
@@ -166,8 +173,6 @@ const OREO_SPRITES_DOWN: [number, number][] = [
 ];
 let lastOreoIdxUp = 0;
 let lastOreoIdxDown = 0;
-const OREO_BOUNDARY_MAX: [number, number] = [10000, 135];
-const OREO_BOUNDARY_MIN: [number, number] = [24000, 145];
 
 function loadOreoBuffer() {
   if (oreoBuffer || oreoLoading) return;
@@ -229,26 +234,6 @@ function playTick(held = false, up = true) {
 
   const ctx = getAudioCtx();
   scheduleTick(ctx.currentTime, held ? 0.3 : 0.55, up);
-}
-
-let atBoundary = false;
-
-function playBoundary(isMax: boolean) {
-  if (atBoundary) return;
-  atBoundary = true;
-  const ctx = getAudioCtx();
-  loadOreoBuffer();
-  if (!oreoBuffer) return;
-  const sprite = OREO_BOUNDARY_MIN;
-  const offset = sprite[0] / 1000;
-  const halfDur = sprite[1] / 1000 / 2;
-  const src = ctx.createBufferSource();
-  src.buffer = oreoBuffer;
-  const gain = ctx.createGain();
-  gain.gain.value = 0.55;
-  src.connect(gain);
-  gain.connect(ctx.destination);
-  src.start(ctx.currentTime, offset, halfDur);
 }
 
 function playDoubleTick(up = true) {
@@ -331,18 +316,10 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
   const slideValuesRef = useRef<number[]>(SLIDES.map(s => s.value));
   const containerRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const [shaking, setShaking] = useState(false);
-  const [boundaryLabel, setBoundaryLabel] = useState<"Min" | "Max" | null>(null);
-  const [boundaryLabelVisible, setBoundaryLabelVisible] = useState(false);
-  const boundaryHitsRef = useRef(0);
   const [slideRangeVisible, setSlideRangeVisible] = useState(false);
   const [slideRangeIdle, setSlideRangeIdle] = useState(true);
-  const [hasUsedArrows, setHasUsedArrows] = useState(false);
   const [barHovered, setBarHovered] = useState(false);
   const slideRangeTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const boundaryLabelTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const boundaryLabelExitRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const shakeTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const budgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const confirmedTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const digitBufferRef = useRef("");
@@ -419,14 +396,12 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     setValue(restored);
     setTypedRaw(null);
     setIsBudging(false);
-    setShaking(false);
     setConfirmed(false);
     setShowPrompt(false);
     setActiveKey(null);
     digitBufferRef.current = "";
     clearTimeout(digitTimeoutRef.current);
     clearTimeout(budgeTimeoutRef.current);
-    clearTimeout(shakeTimeoutRef.current);
     clearTimeout(confirmedTimeoutRef.current);
 
     clearTimeout(slideRangeTimeoutRef.current);
@@ -447,10 +422,10 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     digitBufferRef.current = "";
     if (isNaN(num)) return;
     const cs = SLIDES[slideRef.current];
-    const clamped = Math.min(cs.max, Math.max(cs.min, num));
-    if (clamped !== valueRef.current) {
-      valueRef.current = clamped;
-      setValue(clamped);
+    const wrapped = wrapValue(num, cs.min, cs.max);
+    if (wrapped !== valueRef.current) {
+      valueRef.current = wrapped;
+      setValue(wrapped);
       setIsBudging(true);
       clearTimeout(budgeTimeoutRef.current);
       budgeTimeoutRef.current = setTimeout(() => setIsBudging(false), 600);
@@ -465,56 +440,21 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
       ? tokensForSlide(cs, discoveredRef.current)
       : null;
 
-    let next: number | null = null;
+    let next: number;
     if (snapTokens) {
-      const idx = nextTokenIndex(snapTokens, valueRef.current, direction, shift);
-      if (idx >= 0 && idx < snapTokens.length) {
-        next = snapTokens[idx].numeric ?? null;
-      }
+      const rawIdx = nextTokenIndex(snapTokens, valueRef.current, direction, shift);
+      const len = snapTokens.length;
+      const idx = ((rawIdx % len) + len) % len;
+      next = snapTokens[idx].numeric ?? valueRef.current;
     } else {
       const mult = (f.shiftStep && shift) ? 10 : 1;
-      const candidate = valueRef.current + direction * mult;
-      if (candidate >= cs.min && candidate <= cs.max) next = candidate;
+      next = wrapValue(valueRef.current + direction * mult, cs.min, cs.max);
     }
 
-    if (next === null) {
-      if (f.boundaryShake) {
-        setShaking(true);
-        clearTimeout(shakeTimeoutRef.current);
-        shakeTimeoutRef.current = setTimeout(() => setShaking(false), 300);
-      }
-      boundaryHitsRef.current++;
-      if (boundaryHitsRef.current >= 20) {
-        const label = direction > 0 ? "Max" : "Min";
-        setBoundaryLabel(label);
-        clearTimeout(boundaryLabelTimeoutRef.current);
-        clearTimeout(boundaryLabelExitRef.current);
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            setBoundaryLabelVisible(true);
-          });
-        });
-        boundaryLabelTimeoutRef.current = setTimeout(() => {
-          setBoundaryLabelVisible(false);
-          boundaryLabelExitRef.current = setTimeout(() => setBoundaryLabel(null), 300);
-        }, 400);
-      }
-      if (soundOn) playBoundary(direction > 0);
-      return;
-    }
-    atBoundary = false;
-    boundaryHitsRef.current = 0;
-    if (boundaryLabel) {
-      setBoundaryLabelVisible(false);
-      clearTimeout(boundaryLabelTimeoutRef.current);
-      clearTimeout(boundaryLabelExitRef.current);
-      boundaryLabelExitRef.current = setTimeout(() => setBoundaryLabel(null), 300);
-    }
-    setShaking(false);
     valueRef.current = next;
     setValue(valueRef.current);
     if (soundOn) playTick(held, direction > 0);
-  }, [f.shiftStep, f.boundaryShake, soundOn]);
+  }, [f.shiftStep, soundOn]);
 
   const triggerBudge = useCallback(
     (dir: "up" | "down") => {
@@ -608,9 +548,6 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     if (!f.keyboard) return;
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        setHasUsedArrows(true);
-      }
       if (e.key === "ArrowUp") {
         e.preventDefault();
         stepRef.current(1, e.shiftKey, e.repeat);
@@ -651,15 +588,10 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
           digitBufferRef.current = "";
           const ds2 = SLIDES[slideRef.current];
           if (!isNaN(final) && (final < ds2.min || final > ds2.max)) {
-            const clamped = Math.min(ds2.max, Math.max(ds2.min, final));
-            valueRef.current = clamped;
-            setValue(clamped);
+            const wrapped = wrapValue(final, ds2.min, ds2.max);
+            valueRef.current = wrapped;
+            setValue(wrapped);
             setTypedRaw(null);
-            if (f.boundaryShake) {
-              setShaking(true);
-              clearTimeout(shakeTimeoutRef.current);
-              shakeTimeoutRef.current = setTimeout(() => setShaking(false), 300);
-            }
             budgeTimeoutRef.current = setTimeout(() => setIsBudging(false), 600);
           } else {
             setTypedRaw(null);
@@ -727,12 +659,6 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     ? tokensForSlide(s, discoveredRef.current)
     : null;
   const matchedToken = activeSnapTokens ? matchToken(activeSnapTokens, value) : null;
-  const atMin = activeSnapTokens
-    ? value <= (activeSnapTokens[0].numeric ?? s.min)
-    : value <= s.min;
-  const atMax = activeSnapTokens
-    ? value >= (activeSnapTokens[activeSnapTokens.length - 1].numeric ?? s.max)
-    : value >= s.max;
   const isColorSlide = s.type === "color";
   const targetColor = `hsl(${value}, 70%, 55%)`;
   const budgeY = 0;
@@ -784,9 +710,6 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
                     ? "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease"
                     : "transform 0.2s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease")
               : "opacity 0.3s ease",
-            animation: shaking
-              ? "__budge-shake 0.15s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite"
-              : "none",
           }}
         >
           <div style={{
@@ -864,7 +787,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
                       animation="snappy"
                       stagger={0}
                       style={{
-                        color: shaking || typedOutOfRange ? "#A7A7A7" : "#fff",
+                        color: typedOutOfRange ? "#A7A7A7" : "#fff",
                         fontFamily: FONT,
                         fontWeight: 500,
                         fontSize: 14.5,
@@ -877,7 +800,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
                       {displayNum}
                     </Calligraph>
                     <span style={{
-                      color: shaking || typedOutOfRange ? "#A7A7A7" : "#fff",
+                      color: typedOutOfRange ? "#A7A7A7" : "#fff",
                       fontFamily: FONT,
                       fontWeight: 500,
                       fontSize: 11,
@@ -887,7 +810,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
                     }}>{displayUnit}</span>
                     {matchedToken && (
                       <span style={{
-                        color: shaking ? "#A7A7A7" : "#A7A7A7",
+                        color: "#A7A7A7",
                         fontFamily: FONT,
                         fontWeight: 500,
                         fontSize: 11,
@@ -904,7 +827,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
                   <span style={{ display: "inline-flex", alignItems: "baseline", minWidth: 44, textAlign: "left" }}>
                     <span
                       style={{
-                        color: shaking || typedOutOfRange ? "#A7A7A7" : "#fff",
+                        color: typedOutOfRange ? "#A7A7A7" : "#fff",
                         fontFamily: FONT,
                         fontWeight: 500,
                         fontSize: 14.5,
@@ -917,7 +840,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
                       {displayNum}
                     </span>
                     <span style={{
-                      color: shaking || typedOutOfRange ? "#A7A7A7" : "#fff",
+                      color: typedOutOfRange ? "#A7A7A7" : "#fff",
                       fontFamily: FONT,
                       fontWeight: 500,
                       fontSize: 11,
@@ -947,7 +870,6 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
                 <Arrow
                   down
                   active={f.arrowBounce ? activeKey === "down" : false}
-                  disabled={shaking && atMin}
                   onPointerDown={() => startHold("down")}
                   onPointerUp={stopHold}
                   onPointerLeave={stopHold}
@@ -955,7 +877,6 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
                 />
                 <Arrow
                   active={f.arrowBounce ? activeKey === "up" : false}
-                  disabled={shaking && atMax}
                   onPointerDown={() => startHold("up")}
                   onPointerUp={stopHold}
                   onPointerLeave={stopHold}
