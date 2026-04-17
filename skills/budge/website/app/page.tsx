@@ -42,6 +42,9 @@ export default function HomePage() {
           <div className="[letter-spacing:0em] [white-space-collapse:preserve] font-medium text-[15px]/[22px] text-[#707070] mt-6">
             Use ↑↓ to nudge the value, ←→ to switch between properties. Press Enter to copy a prompt to your clipboard, then paste it back to your agent. Press Escape to dismiss.
           </div>
+          <div className="mb-0 left-0 top-0 w-full min-w-0 [white-space-collapse:preserve] relative text-[#3F3F3F] font-semibold text-[15px]/[22px] mt-8">
+            tokens
+          </div>
           <div className="[letter-spacing:0em] [white-space-collapse:preserve] font-medium text-[15px]/[22px] text-[#707070] mt-4">
             If your project defines design tokens as CSS custom properties (<code className="font-mono-override text-[#3F3F3F]">--spacing-md</code>, <code className="font-mono-override text-[#3F3F3F]">--radius-lg</code>, etc.), ↑↓ snaps through the scale and the copied prompt reads <code className="font-mono-override text-[#3F3F3F]">var(--spacing-md)</code> instead of raw pixels. Works with Tailwind v4&rsquo;s <code className="font-mono-override text-[#3F3F3F]">@theme</code>, Shadcn, or any <code className="font-mono-override text-[#3F3F3F]">:root</code> variables. Press <code className="font-mono-override text-[#3F3F3F]">T</code> to toggle.
           </div>
