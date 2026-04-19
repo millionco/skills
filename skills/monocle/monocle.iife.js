@@ -28,6 +28,30 @@
   var HIDDEN_ATTR = "data-monocle-hidden";
   var DEFAULT_LINK = "https://app.paper.design/file/{file}?node={node}";
 
+  var hoverState = { row: null, el: null };
+
+  function setHover(row, el) {
+    if (hoverState.row === row && hoverState.el === el) return;
+    if (hoverState.row && hoverState.row !== row) {
+      hoverState.row.removeAttribute("data-active");
+    }
+    hoverState.row = row;
+    hoverState.el = el;
+    if (row) row.setAttribute("data-active", "1");
+    var ring = document.getElementById("__monocle_ring") || createRing();
+    positionRing(ring, el);
+  }
+
+  function clearHover() {
+    var ring = document.getElementById("__monocle_ring");
+    if (ring) ring.setAttribute("data-show", "0");
+    if (hoverState.row && hoverState.row.isConnected) {
+      hoverState.row.removeAttribute("data-active");
+    }
+    hoverState.row = null;
+    hoverState.el = null;
+  }
+
   function readConfig() {
     var el = document.querySelector("[data-monocle]");
     if (!el) return {};
@@ -160,18 +184,19 @@
       var collapsed = panel.getAttribute("data-collapsed") === "1";
       panel.setAttribute("data-collapsed", collapsed ? "0" : "1");
       toggle.textContent = collapsed ? "–" : "+";
+      if (!collapsed) clearHover();
     });
     panel.appendChild(head);
 
     var list = document.createElement("div");
     list.id = "__monocle_list";
 
-    var ring = createRing();
     var template = config.link || DEFAULT_LINK;
 
     nodes.forEach(function (n) {
       var row = document.createElement("div");
       row.className = "__monocle_row";
+      row.setAttribute("data-node", n.node);
 
       var name = document.createElement("span");
       name.className = "__monocle_name";
@@ -183,21 +208,13 @@
       idSpan.textContent = n.node;
       row.appendChild(idSpan);
 
-      var hideBtn = document.createElement("button");
-      hideBtn.className = "__monocle_btn";
-      hideBtn.title = "Toggle visibility";
-      hideBtn.textContent = n.el.hasAttribute(HIDDEN_ATTR) ? "show" : "hide";
-      hideBtn.addEventListener("click", function (e) {
+      var syncBtn = document.createElement("button");
+      syncBtn.className = "__monocle_btn";
+      syncBtn.textContent = "sync";
+      syncBtn.addEventListener("click", function (e) {
         e.stopPropagation();
-        if (n.el.hasAttribute(HIDDEN_ATTR)) {
-          n.el.removeAttribute(HIDDEN_ATTR);
-          hideBtn.textContent = "hide";
-        } else {
-          n.el.setAttribute(HIDDEN_ATTR, "");
-          hideBtn.textContent = "show";
-        }
       });
-      row.appendChild(hideBtn);
+      row.appendChild(syncBtn);
 
       var openBtn = document.createElement("button");
       openBtn.className = "__monocle_btn";
@@ -220,14 +237,6 @@
       });
       row.appendChild(openBtn);
 
-      row.addEventListener("mouseenter", function () {
-        row.setAttribute("data-active", "1");
-        positionRing(ring, n.el);
-      });
-      row.addEventListener("mouseleave", function () {
-        row.removeAttribute("data-active");
-        ring.setAttribute("data-show", "0");
-      });
       row.addEventListener("click", function () {
         n.el.scrollIntoView({ behavior: "smooth", block: "center" });
       });
@@ -293,6 +302,42 @@
       },
       { passive: true, capture: true },
     );
+
+    document.addEventListener("mouseover", function (e) {
+      var panel = document.getElementById("__monocle_panel");
+      if (!panel) return;
+      if (panel.getAttribute("data-collapsed") === "1") {
+        clearHover();
+        return;
+      }
+      var target = e.target;
+      if (!target || target.nodeType !== 1) return;
+      var row = target.closest(".__monocle_row");
+      if (row) {
+        var nodeId = row.getAttribute("data-node");
+        if (!nodeId) return;
+        var el = document.querySelector(
+          "[data-paper-node=\"" + CSS.escape(nodeId) + "\"]",
+        );
+        if (el) setHover(row, el);
+        return;
+      }
+      if (target.closest("#" + ROOT_ID) || target.id === "__monocle_ring") return;
+      var paperEl = target.closest("[data-paper-node]");
+      if (paperEl) {
+        var id = paperEl.getAttribute("data-paper-node");
+        var matchingRow = document.querySelector(
+          ".__monocle_row[data-node=\"" + CSS.escape(id) + "\"]",
+        );
+        setHover(matchingRow, paperEl);
+        return;
+      }
+      clearHover();
+    });
+
+    document.addEventListener("mouseout", function (e) {
+      if (!e.relatedTarget) clearHover();
+    });
   }
 
   if (document.readyState === "loading") {
