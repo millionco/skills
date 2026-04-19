@@ -41,8 +41,8 @@ export default function HomePage() {
           <div className="[letter-spacing:0em] [white-space-collapse:preserve] font-medium text-[15px]/[22px] text-[#707070] mt-4">
             Install the skill, then type <code className="font-mono-override text-[#3F3F3F]">/budge</code> to invoke it. Ask your agent to make a visual change and budge will appear.
           </div>
-          <BudgeUsageShikiExample />
           <CodeBlock />
+          <BudgeUsageShikiExample />
           <div className="mb-0 left-0 top-0 w-full min-w-0 [white-space-collapse:preserve] relative text-[#3F3F3F] font-semibold text-[15px]/[22px] mt-8">
             tokens
           </div>
