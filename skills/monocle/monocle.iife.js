@@ -153,6 +153,16 @@
     var panelRect = panel.getBoundingClientRect();
     bar.style.width = panelRect.width + "px";
     bar.style.boxSizing = "border-box";
+    bar.style.setProperty("border-radius", "0 0 14px 14px", "important");
+    var innerPill = null;
+    for (var bi = 0; bi < bar.children.length; bi++) {
+      var bc = bar.children[bi];
+      if (bc.style && bc.style.position === "absolute" && bc.style.inset === "0px") {
+        innerPill = bc;
+        break;
+      }
+    }
+    if (innerPill) innerPill.style.setProperty("border-radius", "0 0 14px 14px", "important");
 
     var prevTransform = outer.style.transform;
     outer.style.transform = "none";
@@ -164,7 +174,7 @@
     var defaultCenterX = barRect.left + barRect.width / 2;
     var translateX = targetCenterX - defaultCenterX;
 
-    var targetBarTop = panelRect.bottom + 6;
+    var targetBarTop = panelRect.bottom;
     var translateY = targetBarTop - barRect.top;
 
     outer.style.transform = "translate(" + translateX + "px, " + translateY + "px)";
@@ -400,7 +410,7 @@
       "  font-size: 12px; line-height: 16px; -webkit-font-smoothing: antialiased;",
       "  -moz-osx-font-smoothing: grayscale; font-synthesis: none; color: rgba(255,255,255,0.9); }",
       "#__monocle_panel { display: flex; flex-direction: column; width: 240px; height: 240px;",
-      "  background: #2A2A2A; border-radius: 14px; overflow: hidden; position: relative;",
+      "  background: #2A2A2A; border-radius: 14px 14px 0 0; overflow: hidden; position: relative;",
       "  box-shadow: 0 1px 2px rgba(0,0,0,0.1), 0 10px 30px rgba(0,0,0,0.3); }",
       "#__monocle_panel[data-collapsed='1'] { height: auto; }",
       "#__monocle_panel[data-collapsed='1'] #__monocle_list { display: none; }",
