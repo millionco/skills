@@ -122,6 +122,29 @@
     if (ring) ring.setAttribute("data-show", "0");
   }
 
+  function isCollapsed() {
+    var panel = document.getElementById("__monocle_panel");
+    return !!(panel && panel.getAttribute("data-collapsed") === "1");
+  }
+
+  function setCollapsed(collapsed) {
+    var panel = document.getElementById("__monocle_panel");
+    if (!panel) return;
+    panel.setAttribute("data-collapsed", collapsed ? "1" : "0");
+    document.documentElement.setAttribute(
+      "data-monocle-collapsed",
+      collapsed ? "1" : "0",
+    );
+    if (collapsed) {
+      clearHover();
+      clearBudgeIdleTimer();
+      var ring = document.getElementById("__monocle_ring");
+      if (ring) ring.setAttribute("data-show", "0");
+    } else if (document.getElementById(BUDGE_CONFIG_ID)) {
+      showBudgeRing();
+    }
+  }
+
   var budgeIdleTimer = null;
   var BUDGE_IDLE_MS = 400;
 
@@ -255,6 +278,8 @@
       "  box-shadow: 0 0 0 4px rgba(0,120,255,0.15); transition: all 80ms ease-out;",
       "  opacity: 0; }",
       "#__monocle_ring[data-show='1'] { opacity: 1; }",
+      "html[data-monocle-collapsed='1'] [data-isolet='budge-widget'] { display: none !important; }",
+      "html[data-monocle-collapsed='1'] #__monocle_ring { display: none !important; }",
     ].join("\n");
     var s = document.createElement("style");
     s.id = STYLE_ID;
@@ -331,7 +356,14 @@
 
     var panel = document.createElement("div");
     panel.id = "__monocle_panel";
-    if (config.open === false) panel.setAttribute("data-collapsed", "1");
+    var startCollapsed =
+      config.open === false ||
+      document.documentElement.getAttribute("data-monocle-collapsed") === "1";
+    if (startCollapsed) panel.setAttribute("data-collapsed", "1");
+    document.documentElement.setAttribute(
+      "data-monocle-collapsed",
+      startCollapsed ? "1" : "0",
+    );
 
     var head = document.createElement("div");
     head.id = "__monocle_head";
@@ -344,12 +376,7 @@
     head.appendChild(headIcon);
     head.appendChild(headName);
     head.addEventListener("click", function () {
-      var collapsed = panel.getAttribute("data-collapsed") === "1";
-      panel.setAttribute("data-collapsed", collapsed ? "0" : "1");
-      if (!collapsed) {
-        clearHover();
-        closeBudge();
-      }
+      setCollapsed(panel.getAttribute("data-collapsed") !== "1");
     });
     panel.appendChild(head);
 
@@ -577,12 +604,7 @@
       var panel = document.getElementById("__monocle_panel");
       if (!panel) return;
       e.preventDefault();
-      var collapsed = panel.getAttribute("data-collapsed") === "1";
-      panel.setAttribute("data-collapsed", collapsed ? "0" : "1");
-      if (!collapsed) {
-        clearHover();
-        closeBudge();
-      }
+      setCollapsed(panel.getAttribute("data-collapsed") !== "1");
     });
 
     document.addEventListener(
