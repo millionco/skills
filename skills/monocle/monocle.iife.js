@@ -204,9 +204,83 @@
           el.getAttribute("aria-label") ||
           el.id ||
           el.tagName.toLowerCase(),
+        children: [],
       });
     }
     return out;
+  }
+
+  function buildTree(nodes) {
+    var byEl = new Map();
+    nodes.forEach(function (n) {
+      n.children = [];
+      byEl.set(n.el, n);
+    });
+    var roots = [];
+    nodes.forEach(function (n) {
+      var p = n.el.parentElement;
+      while (p) {
+        if (byEl.has(p)) {
+          byEl.get(p).children.push(n);
+          return;
+        }
+        p = p.parentElement;
+      }
+      roots.push(n);
+    });
+    return roots;
+  }
+
+  function buildRow(n, depth, template, config) {
+    var row = document.createElement("div");
+    row.className = "__monocle_row";
+    row.setAttribute("data-node", n.node);
+
+    var indent = document.createElement("div");
+    indent.className = "__monocle_indent";
+    indent.style.width = 12 + depth * 16 + "px";
+    row.appendChild(indent);
+
+    var frameIcon = document.createElement("div");
+    frameIcon.className = "__monocle_frame_icon";
+    frameIcon.innerHTML = ICON_FRAME;
+    row.appendChild(frameIcon);
+
+    var name = document.createElement("div");
+    name.className = "__monocle_row_name";
+    name.textContent = n.name;
+    row.appendChild(name);
+
+    var trail = document.createElement("div");
+    trail.className = "__monocle_row_trail";
+    var openBtn = document.createElement("button");
+    openBtn.className = "__monocle_paper_btn";
+    openBtn.title = "Open in Paper";
+    openBtn.textContent = "paper";
+    openBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var url = deepLink(template, n.file || config.fileId, n.node);
+      if (url) {
+        window.open(url, "_blank", "noopener");
+        return;
+      }
+      if (navigator.clipboard && n.node) {
+        navigator.clipboard.writeText(n.node);
+        openBtn.textContent = "copied";
+        setTimeout(function () {
+          openBtn.textContent = "paper";
+        }, 900);
+      }
+    });
+    trail.appendChild(openBtn);
+    row.appendChild(trail);
+
+    row.addEventListener("click", function () {
+      n.el.scrollIntoView({ behavior: "smooth", block: "center" });
+      openBudgeFor(n.el);
+    });
+
+    return row;
   }
 
   function injectStyle() {
@@ -351,56 +425,13 @@
 
     var template = config.link || DEFAULT_LINK;
 
-    nodes.forEach(function (n) {
-      var row = document.createElement("div");
-      row.className = "__monocle_row";
-      row.setAttribute("data-node", n.node);
-
-      var indent = document.createElement("div");
-      indent.className = "__monocle_indent";
-      row.appendChild(indent);
-
-      var frameIcon = document.createElement("div");
-      frameIcon.className = "__monocle_frame_icon";
-      frameIcon.innerHTML = ICON_FRAME;
-      row.appendChild(frameIcon);
-
-      var name = document.createElement("div");
-      name.className = "__monocle_row_name";
-      name.textContent = n.name;
-      row.appendChild(name);
-
-      var trail = document.createElement("div");
-      trail.className = "__monocle_row_trail";
-      var openBtn = document.createElement("button");
-      openBtn.className = "__monocle_paper_btn";
-      openBtn.title = "Open in Paper";
-      openBtn.textContent = "paper";
-      openBtn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        var url = deepLink(template, n.file || config.fileId, n.node);
-        if (url) {
-          window.open(url, "_blank", "noopener");
-          return;
-        }
-        if (navigator.clipboard && n.node) {
-          navigator.clipboard.writeText(n.node);
-          openBtn.textContent = "copied";
-          setTimeout(function () {
-            openBtn.textContent = "paper";
-          }, 900);
-        }
+    var roots = buildTree(nodes);
+    (function walk(items, depth) {
+      items.forEach(function (n) {
+        list.appendChild(buildRow(n, depth, template, config));
+        if (n.children && n.children.length) walk(n.children, depth + 1);
       });
-      trail.appendChild(openBtn);
-      row.appendChild(trail);
-
-      row.addEventListener("click", function () {
-        n.el.scrollIntoView({ behavior: "smooth", block: "center" });
-        openBudgeFor(n.el);
-      });
-
-      list.appendChild(row);
-    });
+    })(roots, 0);
 
     if (nodes.length === 0) {
       var empty = document.createElement("div");
