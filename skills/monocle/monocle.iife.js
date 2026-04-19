@@ -136,7 +136,8 @@
     if (!host) return false;
     var outer = host.querySelector('div[style*="position: fixed"]');
     if (!outer) return false;
-    var pill = outer.firstElementChild;
+    var aligner = outer.firstElementChild;
+    var pill = aligner ? aligner.firstElementChild : null;
     var pillRect = pill ? pill.getBoundingClientRect() : null;
     if (!pillRect || pillRect.width === 0 || pillRect.height === 0) return false;
 
