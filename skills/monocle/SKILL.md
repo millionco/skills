@@ -68,13 +68,14 @@ Without `fileId`, the "paper" button copies the node ID to clipboard instead of 
 
 The panel appears bottom-left once the page mounts and at least one `[data-paper-node]` element is in the DOM. Features:
 
-- **Hover a row** — highlights the matching element on the page with a blue ring.
-- **Click a row** — scrolls the element into view.
-- **`hide` / `show`** — toggles `display: none` on the element via `data-monocle-hidden`.
+- **Hover a row or a page element** — highlights the pair with a blue ring + active row (bi-directional; only when the panel is expanded).
+- **Click a row or a page element** — scrolls it into view and opens [budge](../budge/SKILL.md) targeting that element, so you can tweak padding / radius / gap / font-size live. Page clicks are only intercepted while the panel is expanded.
 - **`paper`** — opens the Paper deep link in a new tab (or copies the node ID if no fileId is set).
-- **`–` / `+`** — collapses the panel.
+- **`sync`** — placeholder (no-op for now).
+- **`–` / `+`** — collapses the panel (also `Cmd/Ctrl + Shift + M`).
+- **`Escape`** — closes budge if it's open.
 
-A MutationObserver keeps the list in sync as components mount/unmount. No build step on the consumer side.
+A MutationObserver keeps the list in sync as components mount/unmount. The budge IIFE is auto-loaded on init from `https://skills-pearl.vercel.app/budge.iife.js`. No build step on the consumer side.
 
 ## Troubleshooting — panel says "no [data-paper-node] elements found"
 

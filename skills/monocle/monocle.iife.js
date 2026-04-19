@@ -27,8 +27,117 @@
   var STYLE_ID = "__monocle_style";
   var HIDDEN_ATTR = "data-monocle-hidden";
   var DEFAULT_LINK = "https://app.paper.design/file/{file}?node={node}";
+  var BUDGE_FALLBACK_SRC = "https://skills-pearl.vercel.app/budge.iife.js";
+  var BUDGE_CONFIG_ID = "__monocle_budge_config";
+  var BUDGE_SCRIPT_ID = "__monocle_budge_script";
+
+  function resolveBudgeSrc() {
+    var cfg = readConfig();
+    if (cfg.budgeSrc) return cfg.budgeSrc;
+    var scripts = document.getElementsByTagName("script");
+    for (var i = 0; i < scripts.length; i++) {
+      var src = scripts[i].src;
+      if (src && /monocle\.iife\.js(\?.*)?$/.test(src)) {
+        return src.replace(/monocle\.iife\.js(\?.*)?$/, "budge.iife.js");
+      }
+    }
+    return BUDGE_FALLBACK_SRC;
+  }
 
   var hoverState = { row: null, el: null };
+
+  function ensureBudgeLoaded() {
+    if (document.getElementById(BUDGE_SCRIPT_ID)) return;
+    var src = resolveBudgeSrc();
+    if (document.querySelector('script[src="' + src + '"]')) return;
+    var s = document.createElement("script");
+    s.id = BUDGE_SCRIPT_ID;
+    s.src = src;
+    s.async = false;
+    document.head.appendChild(s);
+  }
+
+  function clearBudgeTarget() {
+    var prev = document.querySelector("[data-budge-target]");
+    if (prev) prev.removeAttribute("data-budge-target");
+  }
+
+  function buildSlidesFor(el) {
+    var cs = getComputedStyle(el);
+    function px(name) {
+      var v = parseFloat(cs.getPropertyValue(name));
+      return isNaN(v) ? 0 : Math.round(v);
+    }
+    return [
+      { label: "padding", property: "padding", min: 0, max: 96,
+        value: px("padding-top"), original: px("padding-top"), unit: "px", scale: null },
+      { label: "border-radius", property: "border-radius", min: 0, max: 64,
+        value: px("border-top-left-radius"), original: px("border-top-left-radius"), unit: "px", scale: null },
+      { label: "gap", property: "gap", min: 0, max: 96,
+        value: px("gap"), original: px("gap"), unit: "px", scale: null },
+      { label: "font-size", property: "font-size", min: 8, max: 96,
+        value: px("font-size"), original: px("font-size"), unit: "px", scale: null },
+    ];
+  }
+
+  function openBudgeFor(el) {
+    if (!el) return;
+    if (
+      document.activeElement &&
+      document.activeElement !== document.body &&
+      document.activeElement.blur
+    ) {
+      try {
+        document.activeElement.blur();
+      } catch (err) {}
+    }
+    clearHover();
+    clearBudgeTarget();
+    el.setAttribute("data-budge-target", "");
+    var slides = buildSlidesFor(el);
+    var payload = JSON.stringify({ slides: slides, autoFocus: true });
+    var cfg = document.getElementById(BUDGE_CONFIG_ID);
+    if (!cfg) {
+      cfg = document.createElement("div");
+      cfg.id = BUDGE_CONFIG_ID;
+      cfg.hidden = true;
+      document.body.appendChild(cfg);
+      cfg.setAttribute("data-budge", payload);
+      showBudgeRing();
+      return;
+    }
+    cfg.removeAttribute("data-budge");
+    setTimeout(function () {
+      cfg.setAttribute("data-budge", payload);
+      showBudgeRing();
+    }, 0);
+  }
+
+  function closeBudge() {
+    var cfg = document.getElementById(BUDGE_CONFIG_ID);
+    if (cfg) cfg.remove();
+    clearBudgeTarget();
+    clearBudgeIdleTimer();
+    var ring = document.getElementById("__monocle_ring");
+    if (ring) ring.setAttribute("data-show", "0");
+  }
+
+  var budgeIdleTimer = null;
+  var BUDGE_IDLE_MS = 400;
+
+  function clearBudgeIdleTimer() {
+    if (budgeIdleTimer) {
+      clearTimeout(budgeIdleTimer);
+      budgeIdleTimer = null;
+    }
+  }
+
+  function showBudgeRing() {
+    var targetEl = document.querySelector("[data-budge-target]");
+    if (!targetEl) return;
+    var ring = document.getElementById("__monocle_ring") || createRing();
+    positionRing(ring, targetEl);
+  }
 
   function setHover(row, el) {
     if (hoverState.row === row && hoverState.el === el) return;
@@ -87,42 +196,95 @@
     var css = [
       "#__monocle_root, #__monocle_root * { box-sizing: border-box; }",
       "#__monocle_root { position: fixed; bottom: 16px; left: 16px; z-index: 2147483647;",
-      "  font: 500 12px/16px ui-sans-serif, system-ui, sans-serif; color: #1a1a1a; }",
-      "#__monocle_panel { background: rgba(255,255,255,0.98); backdrop-filter: blur(8px);",
-      "  border: 1px solid rgba(0,0,0,0.08); border-radius: 10px; min-width: 240px;",
-      "  max-width: 320px; max-height: 60vh; overflow: hidden; display: flex;",
-      "  flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08); }",
-      "#__monocle_head { display: flex; align-items: center; gap: 8px; padding: 8px 10px;",
-      "  border-bottom: 1px solid rgba(0,0,0,0.06); user-select: none; cursor: pointer; }",
-      "#__monocle_head:hover { background: rgba(0,0,0,0.03); }",
-      "#__monocle_head strong { font-weight: 600; letter-spacing: 0.02em; }",
-      "#__monocle_count { color: #888; font-weight: 500; }",
-      "#__monocle_toggle { margin-left: auto; background: none; border: 0; padding: 4px;",
-      "  cursor: pointer; color: #555; border-radius: 4px; }",
-      "#__monocle_toggle:hover { background: rgba(0,0,0,0.05); }",
-      "#__monocle_list { overflow: auto; padding: 4px; }",
-      ".__monocle_row { display: flex; align-items: center; gap: 6px; padding: 6px 6px;",
-      "  border-radius: 6px; cursor: default; }",
-      ".__monocle_row:hover, .__monocle_row[data-active='1'] { background: rgba(0,120,255,0.08); }",
-      ".__monocle_name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;",
-      "  white-space: nowrap; }",
-      ".__monocle_id { color: #888; font-variant-numeric: tabular-nums; font-size: 11px; }",
-      ".__monocle_btn { background: none; border: 0; padding: 3px 5px; cursor: pointer;",
-      "  color: #555; border-radius: 4px; font-size: 11px; }",
-      ".__monocle_btn:hover { background: rgba(0,0,0,0.08); color: #111; }",
-      "[" + HIDDEN_ATTR + "] { display: none !important; }",
+      "  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;",
+      "  font-size: 12px; line-height: 16px; -webkit-font-smoothing: antialiased;",
+      "  -moz-osx-font-smoothing: grayscale; font-synthesis: none; color: rgba(255,255,255,0.9); }",
+      "#__monocle_panel { display: flex; flex-direction: column; width: 240px; height: 334px;",
+      "  background: #2A2A2A; border-radius: 14px; overflow: hidden;",
+      "  box-shadow: 0 1px 2px rgba(0,0,0,0.1), 0 10px 30px rgba(0,0,0,0.3); }",
+      "#__monocle_panel[data-collapsed='1'] { height: auto; }",
+      "#__monocle_panel[data-collapsed='1'] #__monocle_pages,",
+      "#__monocle_panel[data-collapsed='1'] .__monocle_sep,",
+      "#__monocle_panel[data-collapsed='1'] #__monocle_list { display: none; }",
+      "#__monocle_head { display: flex; align-items: center; gap: 4px; padding: 8px 10px;",
+      "  user-select: none; cursor: pointer; flex-shrink: 0; }",
+      "#__monocle_head_icon { position: relative; display: flex; align-items: center;",
+      "  justify-content: center; flex-shrink: 0; width: 28px; height: 28px;",
+      "  border-radius: 5px; margin: -4px; }",
+      "#__monocle_head_name { display: flex; align-items: center; height: 24px;",
+      "  border-radius: 2px; padding: 0 6px; overflow: hidden; color: rgba(255,255,255,0.9);",
+      "  font-weight: 500; font-size: 13px; line-height: 16px; text-align: center;",
+      "  white-space: nowrap; text-overflow: ellipsis; flex: 1; min-width: 0; }",
+      "#__monocle_pages { display: flex; flex-direction: column; flex-shrink: 0; }",
+      "#__monocle_pages_head { display: flex; align-items: center; height: 24px;",
+      "  justify-content: space-between; margin: 8px 0 2px 0; padding-right: 12px; flex-shrink: 0; }",
+      ".__monocle_pages_label_wrap { display: flex; align-items: center; height: 100%; padding-right: 4px; }",
+      ".__monocle_pages_chev { display: flex; align-items: center; justify-content: center;",
+      "  flex-shrink: 0; height: 100%; width: 20px; }",
+      ".__monocle_pages_label { color: rgba(255,255,255,0.9); font-weight: 500;",
+      "  font-size: 12px; line-height: 16px; }",
+      ".__monocle_plus { display: flex; align-items: center; justify-content: center;",
+      "  position: relative; flex-shrink: 0; border-radius: 5px; margin: -4px; width: 24px; height: 24px; }",
+      "#__monocle_pages_list { max-height: 156px; padding-bottom: 6px; overflow: hidden; }",
+      ".__monocle_row { display: flex; align-items: center; flex-shrink: 0; height: 28px;",
+      "  min-width: 100%; width: -moz-fit-content; width: fit-content; word-break: keep-all;",
+      "  cursor: default; }",
+      ".__monocle_row:hover, .__monocle_row[data-active='1'] { background: rgba(255,255,255,0.05); }",
+      ".__monocle_indent { display: flex; align-items: center; justify-content: center;",
+      "  flex-shrink: 0; height: 100%; width: 20px; }",
+      ".__monocle_frame_icon { display: flex; align-items: center; justify-content: center;",
+      "  opacity: 0.6; flex-shrink: 0; width: 12px; height: 12px; position: relative; }",
+      ".__monocle_row_name { align-self: stretch; flex-grow: 1; margin-left: 8px;",
+      "  align-content: center; color: rgba(255,255,255,0.9); font-size: 12px; line-height: 16px;",
+      "  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }",
+      ".__monocle_row_trail { display: flex; align-items: center; justify-content: flex-end;",
+      "  width: 45px; flex-shrink: 0; padding-right: 10px; gap: 4px; }",
+      ".__monocle_page_check { display: flex; align-items: center; justify-content: center;",
+      "  margin-right: 12px; width: 16px; flex-shrink: 0; }",
+      "#__monocle_list { flex: 1; min-height: 0; overflow: auto; padding: 6px 0;",
+      "  position: relative; }",
+      ".__monocle_sep { height: 1px; background: rgba(255,255,255,0.06); margin: 0; flex-shrink: 0; }",
+      ".__monocle_paper_btn { display: none; background: none; border: 0; padding: 2px 6px;",
+      "  cursor: pointer; color: rgba(255,255,255,0.65); border-radius: 3px; font-size: 11px;",
+      "  font-family: inherit; }",
+      ".__monocle_paper_btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.9); }",
+      ".__monocle_row:hover .__monocle_paper_btn { display: inline-block; }",
+      ".__monocle_empty { padding: 12px 16px; color: rgba(255,255,255,0.5); font-size: 12px; }",
       "#__monocle_ring { position: fixed; pointer-events: none; z-index: 2147483646;",
       "  border: 2px solid rgba(0,120,255,0.85); border-radius: 4px;",
       "  box-shadow: 0 0 0 4px rgba(0,120,255,0.15); transition: all 80ms ease-out;",
       "  opacity: 0; }",
       "#__monocle_ring[data-show='1'] { opacity: 1; }",
-      "#__monocle_panel[data-collapsed='1'] #__monocle_list { display: none; }",
     ].join("\n");
     var s = document.createElement("style");
     s.id = STYLE_ID;
     s.textContent = css;
     document.head.appendChild(s);
   }
+
+  var ICON_MONOCLE =
+    '<svg width="13" height="13" viewBox="0 0 13 13" fill="rgba(255,255,255,0.5)" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M2 0V2H8V8H2V2H0V13H8V8H13V0H2Z"/></svg>';
+  var ICON_CHEVRON =
+    '<svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="1" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M1 2.5L4 5.5L7 2.5"/></svg>';
+  var ICON_PLUS =
+    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M5 0V10M0 5H10"/></svg>';
+  var ICON_PAGE =
+    '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M12.5 5.5L9.5 2.5H4.5C3.948 2.5 3.5 2.948 3.5 3.5V12.5C3.5 13.052 3.948 13.5 4.5 13.5H11.5C12.052 13.5 12.5 13.052 12.5 12.5V5.5Z" fill="rgba(255,255,255,0.11)"/>' +
+    '<path d="M12.5 5.5L9.5 2.5M12.5 5.5V12.5C12.5 13.052 12.052 13.5 11.5 13.5H4.5C3.948 13.5 3.5 13.052 3.5 12.5V3.5C3.5 2.948 3.948 2.5 4.5 2.5H9.5M12.5 5.5H9.5V2.5" stroke="rgba(255,255,255,0.9)"/></svg>';
+  var ICON_CHECK =
+    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M1.75 5.75L4.516 8.25L8.75 1.75"/></svg>';
+  var ICON_FRAME =
+    '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<rect x="3" y="3" width="10" height="10" fill="rgba(255,255,255,0.11)"/>' +
+    '<path d="M4 9L4 12H7V13H4H3V12V9H4Z" fill="rgba(255,255,255,0.9)"/>' +
+    '<path d="M7 3H4H3V4V7H4L4 4H7V3Z" fill="rgba(255,255,255,0.9)"/>' +
+    '<path d="M9 3H12H13V4V7H12V4H9V3Z" fill="rgba(255,255,255,0.9)"/>' +
+    '<path d="M12 9V12H9V13H12H13V12V9H12Z" fill="rgba(255,255,255,0.9)"/></svg>';
 
   function createRing() {
     var ring = document.getElementById("__monocle_ring");
@@ -173,20 +335,69 @@
 
     var head = document.createElement("div");
     head.id = "__monocle_head";
-    head.innerHTML =
-      "<strong>monocle</strong><span id='__monocle_count'>" + nodes.length + "</span>";
-
-    var toggle = document.createElement("span");
-    toggle.id = "__monocle_toggle";
-    toggle.textContent = panel.getAttribute("data-collapsed") === "1" ? "+" : "–";
-    head.appendChild(toggle);
+    var headIcon = document.createElement("div");
+    headIcon.id = "__monocle_head_icon";
+    headIcon.innerHTML = ICON_MONOCLE;
+    var headName = document.createElement("div");
+    headName.id = "__monocle_head_name";
+    headName.textContent = config.title || "monocle";
+    head.appendChild(headIcon);
+    head.appendChild(headName);
     head.addEventListener("click", function () {
       var collapsed = panel.getAttribute("data-collapsed") === "1";
       panel.setAttribute("data-collapsed", collapsed ? "0" : "1");
-      toggle.textContent = collapsed ? "–" : "+";
       if (!collapsed) clearHover();
     });
     panel.appendChild(head);
+
+    var pages = document.createElement("div");
+    pages.id = "__monocle_pages";
+
+    var pagesHead = document.createElement("div");
+    pagesHead.id = "__monocle_pages_head";
+    var pagesLabelWrap = document.createElement("div");
+    pagesLabelWrap.className = "__monocle_pages_label_wrap";
+    var pagesChev = document.createElement("div");
+    pagesChev.className = "__monocle_pages_chev";
+    pagesChev.innerHTML = ICON_CHEVRON;
+    var pagesLabel = document.createElement("div");
+    pagesLabel.className = "__monocle_pages_label";
+    pagesLabel.textContent = "Pages";
+    pagesLabelWrap.appendChild(pagesChev);
+    pagesLabelWrap.appendChild(pagesLabel);
+    var plus = document.createElement("div");
+    plus.className = "__monocle_plus";
+    plus.innerHTML = ICON_PLUS;
+    pagesHead.appendChild(pagesLabelWrap);
+    pagesHead.appendChild(plus);
+    pages.appendChild(pagesHead);
+
+    var pagesList = document.createElement("div");
+    pagesList.id = "__monocle_pages_list";
+    var pageRow = document.createElement("div");
+    pageRow.className = "__monocle_row";
+    var pageIndent = document.createElement("div");
+    pageIndent.className = "__monocle_indent";
+    var pageIcon = document.createElement("div");
+    pageIcon.className = "__monocle_frame_icon";
+    pageIcon.innerHTML = ICON_PAGE;
+    var pageName = document.createElement("div");
+    pageName.className = "__monocle_row_name";
+    pageName.textContent = "Page 1";
+    var pageCheck = document.createElement("div");
+    pageCheck.className = "__monocle_page_check";
+    pageCheck.innerHTML = ICON_CHECK;
+    pageRow.appendChild(pageIndent);
+    pageRow.appendChild(pageIcon);
+    pageRow.appendChild(pageName);
+    pageRow.appendChild(pageCheck);
+    pagesList.appendChild(pageRow);
+    pages.appendChild(pagesList);
+    panel.appendChild(pages);
+
+    var sep = document.createElement("div");
+    sep.className = "__monocle_sep";
+    panel.appendChild(sep);
 
     var list = document.createElement("div");
     list.id = "__monocle_list";
@@ -198,26 +409,24 @@
       row.className = "__monocle_row";
       row.setAttribute("data-node", n.node);
 
-      var name = document.createElement("span");
-      name.className = "__monocle_name";
+      var indent = document.createElement("div");
+      indent.className = "__monocle_indent";
+      row.appendChild(indent);
+
+      var frameIcon = document.createElement("div");
+      frameIcon.className = "__monocle_frame_icon";
+      frameIcon.innerHTML = ICON_FRAME;
+      row.appendChild(frameIcon);
+
+      var name = document.createElement("div");
+      name.className = "__monocle_row_name";
       name.textContent = n.name;
       row.appendChild(name);
 
-      var idSpan = document.createElement("span");
-      idSpan.className = "__monocle_id";
-      idSpan.textContent = n.node;
-      row.appendChild(idSpan);
-
-      var syncBtn = document.createElement("button");
-      syncBtn.className = "__monocle_btn";
-      syncBtn.textContent = "sync";
-      syncBtn.addEventListener("click", function (e) {
-        e.stopPropagation();
-      });
-      row.appendChild(syncBtn);
-
+      var trail = document.createElement("div");
+      trail.className = "__monocle_row_trail";
       var openBtn = document.createElement("button");
-      openBtn.className = "__monocle_btn";
+      openBtn.className = "__monocle_paper_btn";
       openBtn.title = "Open in Paper";
       openBtn.textContent = "paper";
       openBtn.addEventListener("click", function (e) {
@@ -235,10 +444,12 @@
           }, 900);
         }
       });
-      row.appendChild(openBtn);
+      trail.appendChild(openBtn);
+      row.appendChild(trail);
 
       row.addEventListener("click", function () {
         n.el.scrollIntoView({ behavior: "smooth", block: "center" });
+        openBudgeFor(n.el);
       });
 
       list.appendChild(row);
@@ -246,8 +457,7 @@
 
     if (nodes.length === 0) {
       var empty = document.createElement("div");
-      empty.className = "__monocle_row";
-      empty.style.color = "#888";
+      empty.className = "__monocle_empty";
       empty.textContent = "no [data-paper-node] elements found";
       list.appendChild(empty);
     }
@@ -272,6 +482,7 @@
   }
 
   function init() {
+    ensureBudgeLoaded();
     sync();
     var observer = new MutationObserver(function (muts) {
       for (var i = 0; i < muts.length; i++) {
@@ -310,6 +521,9 @@
         clearHover();
         return;
       }
+      if (document.getElementById(BUDGE_CONFIG_ID)) {
+        return;
+      }
       var target = e.target;
       if (!target || target.nodeType !== 1) return;
       var row = target.closest(".__monocle_row");
@@ -338,6 +552,55 @@
     document.addEventListener("mouseout", function (e) {
       if (!e.relatedTarget) clearHover();
     });
+
+    document.addEventListener("keydown", function (e) {
+      if (document.getElementById(BUDGE_CONFIG_ID)) {
+        var r = document.getElementById("__monocle_ring");
+        if (r) r.setAttribute("data-show", "0");
+        clearBudgeIdleTimer();
+        budgeIdleTimer = setTimeout(function () {
+          if (document.getElementById(BUDGE_CONFIG_ID)) showBudgeRing();
+        }, BUDGE_IDLE_MS);
+      }
+      if (
+        (e.key === "Escape" || e.key === "Enter") &&
+        document.getElementById(BUDGE_CONFIG_ID)
+      ) {
+        closeBudge();
+        return;
+      }
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
+      if (e.key !== "M" && e.key !== "m") return;
+      var panel = document.getElementById("__monocle_panel");
+      if (!panel) return;
+      e.preventDefault();
+      var collapsed = panel.getAttribute("data-collapsed") === "1";
+      panel.setAttribute("data-collapsed", collapsed ? "0" : "1");
+      if (!collapsed) clearHover();
+    });
+
+    document.addEventListener(
+      "click",
+      function (e) {
+        var panel = document.getElementById("__monocle_panel");
+        if (!panel || panel.getAttribute("data-collapsed") === "1") return;
+        var target = e.target;
+        if (!target || target.nodeType !== 1) return;
+        if (target.closest("#" + ROOT_ID)) return;
+        if (target.closest('[data-isolet="budge-widget"]')) return;
+        var paperEl = target.closest("[data-paper-node]");
+        if (paperEl) {
+          e.preventDefault();
+          e.stopPropagation();
+          openBudgeFor(paperEl);
+          return;
+        }
+        if (document.getElementById(BUDGE_CONFIG_ID)) {
+          closeBudge();
+        }
+      },
+      true,
+    );
   }
 
   if (document.readyState === "loading") {
