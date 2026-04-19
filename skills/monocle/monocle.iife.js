@@ -150,13 +150,15 @@
     var bar = aligner ? aligner.firstElementChild : null;
     if (!bar) return false;
 
+    var panelRect = panel.getBoundingClientRect();
+    bar.style.width = panelRect.width + "px";
+    bar.style.boxSizing = "border-box";
+
     var prevTransform = outer.style.transform;
     outer.style.transform = "none";
     var barRect = bar.getBoundingClientRect();
     outer.style.transform = prevTransform;
     if (!barRect || barRect.width === 0 || barRect.height === 0) return false;
-
-    var panelRect = panel.getBoundingClientRect();
 
     var targetCenterX = panelRect.left + panelRect.width / 2;
     var defaultCenterX = barRect.left + barRect.width / 2;
