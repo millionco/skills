@@ -217,7 +217,7 @@
       "  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;",
       "  font-size: 12px; line-height: 16px; -webkit-font-smoothing: antialiased;",
       "  -moz-osx-font-smoothing: grayscale; font-synthesis: none; color: rgba(255,255,255,0.9); }",
-      "#__monocle_panel { display: flex; flex-direction: column; width: 240px; height: 334px;",
+      "#__monocle_panel { display: flex; flex-direction: column; width: 240px; height: 240px;",
       "  background: #2A2A2A; border-radius: 14px; overflow: hidden;",
       "  box-shadow: 0 1px 2px rgba(0,0,0,0.1), 0 10px 30px rgba(0,0,0,0.3); }",
       "#__monocle_panel[data-collapsed='1'] { height: auto; }",
