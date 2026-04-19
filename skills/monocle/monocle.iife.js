@@ -129,13 +129,22 @@
     budgeRepositionRaf = requestAnimationFrame(tick);
   }
 
+  function findBudgeOuter() {
+    var cands = document.querySelectorAll('div[style*="2147483646"]');
+    for (var i = 0; i < cands.length; i++) {
+      var el = cands[i];
+      if (el.closest("#" + ROOT_ID)) continue;
+      var cs = el.style;
+      if (cs && cs.position === "fixed") return el;
+    }
+    return null;
+  }
+
   function repositionBudge() {
     if (!document.getElementById(BUDGE_CONFIG_ID)) return true;
     var panel = document.getElementById("__monocle_panel");
     if (!panel) return false;
-    var host = document.querySelector('[data-isolet="budge-widget"]');
-    if (!host) return false;
-    var outer = host.querySelector('div[style*="fixed"]');
+    var outer = findBudgeOuter();
     if (!outer) return false;
     var aligner = outer.firstElementChild;
     var bar = aligner ? aligner.firstElementChild : null;
@@ -153,11 +162,11 @@
     var defaultCenterX = barRect.left + barRect.width / 2;
     var translateX = targetCenterX - defaultCenterX;
 
-    var targetBarBottom = panelRect.bottom - 12;
-    var translateY = targetBarBottom - barRect.bottom;
+    var targetBarTop = panelRect.bottom + 6;
+    var translateY = targetBarTop - barRect.top;
 
     outer.style.transform = "translate(" + translateX + "px, " + translateY + "px)";
-    outer.style.transition = "transform 80ms ease-out";
+    outer.style.transition = "none";
     return true;
   }
 
@@ -178,6 +187,8 @@
       "data-monocle-collapsed",
       collapsed ? "1" : "0",
     );
+    var budgeOuter = findBudgeOuter();
+    if (budgeOuter) budgeOuter.style.display = collapsed ? "none" : "";
     if (collapsed) {
       clearHover();
       clearBudgeIdleTimer();
@@ -185,6 +196,7 @@
       if (ring) ring.setAttribute("data-show", "0");
     } else if (document.getElementById(BUDGE_CONFIG_ID)) {
       showBudgeRing();
+      scheduleBudgeReposition();
     }
   }
 
@@ -288,7 +300,7 @@
         var ny = Math.max(0, Math.min(maxY, baseTop + dy));
         rootEl.style.left = nx + "px";
         rootEl.style.top = ny + "px";
-        if (document.getElementById(BUDGE_CONFIG_ID)) scheduleBudgeReposition();
+        if (document.getElementById(BUDGE_CONFIG_ID)) repositionBudge();
       }
 
       function onUp() {
@@ -426,7 +438,6 @@
       "  box-shadow: 0 0 0 4px rgba(0,120,255,0.15); transition: all 80ms ease-out;",
       "  opacity: 0; }",
       "#__monocle_ring[data-show='1'] { opacity: 1; }",
-      "html[data-monocle-collapsed='1'] [data-isolet='budge-widget'] { display: none !important; }",
       "html[data-monocle-collapsed='1'] #__monocle_ring { display: none !important; }",
     ].join("\n");
     var s = document.createElement("style");
@@ -572,6 +583,7 @@
         )
           continue;
         if (m.target && m.target.closest && m.target.closest("#" + ROOT_ID)) continue;
+        if (m.target && m.target.id === BUDGE_CONFIG_ID) continue;
         schedule();
         return;
       }
@@ -666,7 +678,8 @@
         var target = e.target;
         if (!target || target.nodeType !== 1) return;
         if (target.closest("#" + ROOT_ID)) return;
-        if (target.closest('[data-isolet="budge-widget"]')) return;
+        var budgeOuter = findBudgeOuter();
+        if (budgeOuter && budgeOuter.contains(target)) return;
         var paperEl = target.closest("[data-paper-node]");
         if (paperEl) {
           e.preventDefault();
