@@ -111,84 +111,41 @@
     setTimeout(function () {
       cfg.setAttribute("data-budge", payload);
       showBudgeRing();
-      scheduleBudgeIntegrate();
+      scheduleBudgeReposition();
     }, 0);
   }
 
-  var budgeIntegrateRaf = null;
-  var budgeStyleObserver = null;
+  var budgeRepositionRaf = null;
 
-  function scheduleBudgeIntegrate() {
-    if (budgeIntegrateRaf) cancelAnimationFrame(budgeIntegrateRaf);
+  function scheduleBudgeReposition() {
+    if (budgeRepositionRaf) cancelAnimationFrame(budgeRepositionRaf);
     var tries = 0;
     function tick() {
-      budgeIntegrateRaf = null;
-      if (integrateBudge()) {
-        watchBudgeStyles();
-        return;
-      }
-      if (++tries > 60) return;
-      budgeIntegrateRaf = requestAnimationFrame(tick);
+      budgeRepositionRaf = null;
+      if (repositionBudge()) return;
+      if (++tries > 30) return;
+      budgeRepositionRaf = requestAnimationFrame(tick);
     }
-    budgeIntegrateRaf = requestAnimationFrame(tick);
+    budgeRepositionRaf = requestAnimationFrame(tick);
   }
 
-  var budgeIntegrating = false;
-
-  function watchBudgeStyles() {
-    if (budgeStyleObserver) return;
-    var host = document.querySelector('[data-isolet="budge-widget"]');
-    if (!host) return;
-    budgeStyleObserver = new MutationObserver(function () {
-      if (budgeIntegrating || budgeIntegrateRaf) return;
-      budgeIntegrateRaf = requestAnimationFrame(function () {
-        budgeIntegrateRaf = null;
-        integrateBudge();
-      });
-    });
-    budgeStyleObserver.observe(host, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["style"],
-    });
-  }
-
-  function integrateBudge() {
-    var host = document.querySelector('[data-isolet="budge-widget"]');
-    if (!host) return false;
+  function repositionBudge() {
+    if (!document.getElementById(BUDGE_CONFIG_ID)) return true;
     var panel = document.getElementById("__monocle_panel");
     if (!panel) return false;
-    budgeIntegrating = true;
-    if (host.parentElement !== panel) panel.appendChild(host);
-    host.style.setProperty("position", "absolute", "important");
-    host.style.setProperty("bottom", "0", "important");
-    host.style.setProperty("left", "0", "important");
-    host.style.setProperty("right", "0", "important");
-    host.style.setProperty("height", "68px", "important");
-    host.style.setProperty("z-index", "10", "important");
-    var wrapper = host.firstElementChild;
-    if (wrapper) {
-      wrapper.style.setProperty("position", "absolute", "important");
-      wrapper.style.setProperty("inset", "0", "important");
-      var container = wrapper.firstElementChild;
-      if (container) {
-        container.style.setProperty("position", "absolute", "important");
-        container.style.setProperty("top", "0", "important");
-        container.style.setProperty("bottom", "0", "important");
-        container.style.setProperty("left", "0", "important");
-        container.style.setProperty("right", "0", "important");
-        container.style.setProperty("z-index", "auto", "important");
-      }
-    }
-    var bar = host.querySelector('div[style*="border-radius: 9999"]');
-    if (bar) {
-      var pillBg = bar.querySelector('div[style*="inset: 0"]');
-      if (pillBg) {
-        pillBg.style.setProperty("background", "transparent", "important");
-        pillBg.style.setProperty("box-shadow", "none", "important");
-      }
-    }
-    budgeIntegrating = false;
+    var host = document.querySelector('[data-isolet="budge-widget"]');
+    if (!host) return false;
+    var outer = host.querySelector('div[style*="fixed"]');
+    if (!outer) return false;
+
+    var panelRect = panel.getBoundingClientRect();
+    var vh = window.innerHeight;
+    var panelBottomOffset = vh - panelRect.bottom;
+
+    outer.style.setProperty("bottom", (panelBottomOffset - 12) + "px", "important");
+    outer.style.setProperty("left", panelRect.left + "px", "important");
+    outer.style.setProperty("width", panelRect.width + "px", "important");
+    outer.style.setProperty("right", "auto", "important");
     return true;
   }
 
@@ -197,10 +154,6 @@
     if (cfg) cfg.remove();
     clearBudgeTarget();
     clearBudgeIdleTimer();
-    if (budgeStyleObserver) {
-      budgeStyleObserver.disconnect();
-      budgeStyleObserver = null;
-    }
     var ring = document.getElementById("__monocle_ring");
     if (ring) ring.setAttribute("data-show", "0");
   }
@@ -323,6 +276,7 @@
         var ny = Math.max(0, Math.min(maxY, baseTop + dy));
         rootEl.style.left = nx + "px";
         rootEl.style.top = ny + "px";
+        if (document.getElementById(BUDGE_CONFIG_ID)) scheduleBudgeReposition();
       }
 
       function onUp() {
@@ -462,7 +416,6 @@
       "#__monocle_ring[data-show='1'] { opacity: 1; }",
       "html[data-monocle-collapsed='1'] [data-isolet='budge-widget'] { display: none !important; }",
       "html[data-monocle-collapsed='1'] #__monocle_ring { display: none !important; }",
-      "#__monocle_panel [data-isolet='budge-widget'] div[style*='background'][style*='#161616'] { background: transparent !important; box-shadow: none !important; }",
     ].join("\n");
     var s = document.createElement("style");
     s.id = STYLE_ID;
@@ -617,7 +570,10 @@
       attributes: true,
       attributeFilter: ["data-paper-node", "data-paper-file", "data-paper-name", "data-monocle"],
     });
-    window.addEventListener("resize", schedule, { passive: true });
+    window.addEventListener("resize", function () {
+      schedule();
+      if (document.getElementById(BUDGE_CONFIG_ID)) scheduleBudgeReposition();
+    }, { passive: true });
     window.addEventListener(
       "scroll",
       function () {
