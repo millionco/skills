@@ -129,6 +129,22 @@
     budgeRepositionRaf = requestAnimationFrame(tick);
   }
 
+  function forceBarActive(bar) {
+    bar.setAttribute("data-monocle-budge-active", "");
+    function fixScale() {
+      var t = bar.style.transform || "";
+      var newT = t.replace(/\bscale\s*\([^)]*\)/g, "scale(1)");
+      if (newT !== t) bar.style.transform = newT;
+    }
+    fixScale();
+    if (bar.__monocleScaleObserver) return;
+    bar.__monocleScaleObserver = new MutationObserver(fixScale);
+    bar.__monocleScaleObserver.observe(bar, {
+      attributes: true,
+      attributeFilter: ["style"],
+    });
+  }
+
   function findBudgeOuter() {
     var cands = document.querySelectorAll('div[style*="2147483646"]');
     for (var i = 0; i < cands.length; i++) {
@@ -163,6 +179,7 @@
       }
     }
     if (innerPill) innerPill.style.setProperty("border-radius", "0 0 14px 14px", "important");
+    forceBarActive(bar);
 
     var prevTransform = outer.style.transform;
     outer.style.transform = "none";
@@ -451,6 +468,7 @@
       "  opacity: 0; }",
       "#__monocle_ring[data-show='1'] { opacity: 1; }",
       "html[data-monocle-collapsed='1'] #__monocle_ring { display: none !important; }",
+      "[data-monocle-budge-active] { opacity: 1 !important; }",
     ].join("\n");
     var s = document.createElement("style");
     s.id = STYLE_ID;
