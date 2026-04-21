@@ -7,7 +7,6 @@ import { TextMorph } from "torph/react";
 
 import { cn } from "@/lib/utils";
 import { useSound } from "@/hooks/use-sound";
-import { click001Sound } from "@/lib/click-001";
 import { useWebHaptics } from "web-haptics/react";
 
 function Accordion({ className, ...props }: AccordionPrimitive.Root.Props) {
@@ -123,7 +122,7 @@ function AccordionContent({
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  const [playCopy] = useSound(click001Sound, { volume: 0.15 });
+  const [playCopy] = useSound();
   const { trigger: haptic } = useWebHaptics();
 
   return (

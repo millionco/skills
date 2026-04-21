@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Calligraph } from "calligraph";
+import { defineSound, ensureReady } from "@web-kits/audio";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 
 const FONT = "'Open Runde', system-ui, sans-serif";
@@ -82,93 +83,195 @@ function wrapValue(v: number, min: number, max: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Audio — subtle haptic tick via Web Audio API
+// Audio — "hover" from the mechanical patch in @web-kits/audio
+// (https://audio.raphaelsalaja.com/library/mechanical).
 // ---------------------------------------------------------------------------
 
-let audioCtx: AudioContext | null = null;
+// HRTF-panned tick. Centered between the ears with a subtle vertical offset:
+// up-ticks image slightly above the listener, down-ticks slightly below.
+const hover = defineSound({
+  source: { type: "noise", color: "white" },
+  filter: { type: "highpass", frequency: 6000 },
+  envelope: { attack: 0, decay: 0.008, sustain: 0, release: 0.003 },
+  gain: 0.05,
+  panner: {
+    positionX: 0,
+    positionY: 0.04,
+    positionZ: 0,
+    panningModel: "HRTF",
+  },
+});
+
+// Slightly quieter variant for the down-arrow tick, panned slightly below ear.
+const hoverDown = defineSound({
+  source: { type: "noise", color: "white" },
+  filter: { type: "highpass", frequency: 6000 },
+  envelope: { attack: 0, decay: 0.008, sustain: 0, release: 0.003 },
+  gain: 0.035,
+  panner: {
+    positionX: 0,
+    positionY: -0.04,
+    positionZ: 0,
+    panningModel: "HRTF",
+  },
+});
+
+// "tab-switch" from the minimal patch at audio.raphaelsalaja.com/library/minimal.
+const tabSwitch = defineSound({
+  source: { type: "sine", frequency: 1050 },
+  envelope: { attack: 0, decay: 0.015, sustain: 0, release: 0.005 },
+  gain: 0.07,
+});
+
+// "success" from the minimal patch at audio.raphaelsalaja.com/library/minimal.
+const success = defineSound({
+  layers: [
+    {
+      source: { type: "sine", frequency: 523 },
+      envelope: { attack: 0, decay: 0.05, sustain: 0, release: 0.015 },
+      gain: 0.1,
+    },
+    {
+      source: { type: "sine", frequency: 784 },
+      envelope: { attack: 0, decay: 0.05, sustain: 0, release: 0.015 },
+      delay: 0.06,
+      gain: 0.08,
+    },
+  ],
+});
+
+// "undo" from the minimal patch at audio.raphaelsalaja.com/library/minimal.
+const undo = defineSound({
+  source: { type: "sine", frequency: { start: 800, end: 600 } },
+  envelope: { attack: 0, decay: 0.035, sustain: 0, release: 0.01 },
+  gain: 0.07,
+});
+
+// "toggle-on" from the minimal patch at audio.raphaelsalaja.com/library/minimal.
+const toggleOn = defineSound({
+  layers: [
+    {
+      source: { type: "sine", frequency: 880 },
+      envelope: { attack: 0, decay: 0.02, sustain: 0, release: 0.006 },
+      gain: 0.08,
+    },
+    {
+      source: { type: "sine", frequency: 1320 },
+      envelope: { attack: 0, decay: 0.02, sustain: 0, release: 0.006 },
+      delay: 0.03,
+      gain: 0.07,
+    },
+  ],
+});
+
+// "toggle-off" from the minimal patch at audio.raphaelsalaja.com/library/minimal.
+const toggleOff = defineSound({
+  layers: [
+    {
+      source: { type: "sine", frequency: 1320 },
+      envelope: { attack: 0, decay: 0.02, sustain: 0, release: 0.006 },
+      gain: 0.08,
+    },
+    {
+      source: { type: "sine", frequency: 880 },
+      envelope: { attack: 0, decay: 0.02, sustain: 0, release: 0.006 },
+      delay: 0.03,
+      gain: 0.07,
+    },
+  ],
+});
+
+// "toggle-on" / "toggle-off" from the mechanical patch at
+// audio.raphaelsalaja.com/library/mechanical — used for token-snap toggle.
+const tokenSnapOn = defineSound({
+  layers: [
+    {
+      source: { type: "noise", color: "white" },
+      filter: { type: "bandpass", frequency: 2000, resonance: 3 },
+      envelope: { attack: 0, decay: 0.02, sustain: 0, release: 0.006 },
+      gain: 0.12,
+    },
+    {
+      source: { type: "noise", color: "white" },
+      filter: { type: "bandpass", frequency: 4500, resonance: 3 },
+      envelope: { attack: 0, decay: 0.015, sustain: 0, release: 0.005 },
+      delay: 0.025,
+      gain: 0.1,
+    },
+  ],
+});
+
+const tokenSnapOff = defineSound({
+  layers: [
+    {
+      source: { type: "noise", color: "white" },
+      filter: { type: "bandpass", frequency: 4500, resonance: 3 },
+      envelope: { attack: 0, decay: 0.02, sustain: 0, release: 0.006 },
+      gain: 0.12,
+    },
+    {
+      source: { type: "noise", color: "white" },
+      filter: { type: "bandpass", frequency: 2000, resonance: 3 },
+      envelope: { attack: 0, decay: 0.015, sustain: 0, release: 0.005 },
+      delay: 0.025,
+      gain: 0.1,
+    },
+  ],
+});
+
+const swoosh = defineSound({
+  source: { type: "sine", frequency: { start: 600, end: 1400 } },
+  envelope: { attack: 0.005, decay: 0.04, sustain: 0, release: 0.015 },
+  gain: 0.05,
+});
+
 let lastTickTime = 0;
 
-function getAudioCtx() {
-  if (!audioCtx) audioCtx = new AudioContext();
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  return audioCtx;
+function playHover(up = true) {
+  ensureReady();
+  (up ? hover : hoverDown)();
 }
-
-let oreoBuffer: AudioBuffer | null = null;
-let oreoLoading = false;
-
-const OREO_SPRITES_UP: [number, number][] = [
-  [22000, 103], [12000, 109], [0, 120],
-];
-const OREO_SPRITES_DOWN: [number, number][] = [
-  [2000, 110], [4000, 105], [6000, 115],
-];
-let lastOreoIdxUp = 0;
-let lastOreoIdxDown = 0;
-
-function loadOreoBuffer() {
-  if (oreoBuffer || oreoLoading) return;
-  oreoLoading = true;
-  const ctx = getAudioCtx();
-  fetch("/sounds.mp3")
-    .then(r => r.arrayBuffer())
-    .then(ab => ctx.decodeAudioData(ab))
-    .then(buf => { oreoBuffer = buf; })
-    .catch(() => { oreoLoading = false; });
-}
-
-function scheduleTick(time: number, volume: number, up = true) {
-  const ctx = getAudioCtx();
-  loadOreoBuffer();
-  if (!oreoBuffer) return;
-  const sprites = up ? OREO_SPRITES_UP : OREO_SPRITES_DOWN;
-  if (up) {
-    lastOreoIdxUp = (lastOreoIdxUp + 1) % sprites.length;
-  } else {
-    lastOreoIdxDown = (lastOreoIdxDown + 1) % sprites.length;
-  }
-  const sprite = sprites[up ? lastOreoIdxUp : lastOreoIdxDown];
-  const offset = sprite[0] / 1000;
-  const halfDur = sprite[1] / 1000 / 2;
-  const src = ctx.createBufferSource();
-  src.buffer = oreoBuffer;
-  const gain = ctx.createGain();
-  gain.gain.value = volume * (0.85 + Math.random() * 0.3);
-  src.connect(gain);
-  gain.connect(ctx.destination);
-  src.start(time, offset, halfDur);
-}
-
-const OREO_CONFIRM: [number, number] = [8000, 112];
 
 function playConfirm() {
-  const ctx = getAudioCtx();
-  loadOreoBuffer();
-  if (!oreoBuffer) return;
-  const offset = OREO_CONFIRM[0] / 1000;
-  const halfDur = OREO_CONFIRM[1] / 1000 / 2;
-  const src = ctx.createBufferSource();
-  src.buffer = oreoBuffer;
-  const gain = ctx.createGain();
-  gain.gain.value = 0.6;
-  src.connect(gain);
-  gain.connect(ctx.destination);
-  src.start(ctx.currentTime, offset, halfDur);
+  ensureReady();
+  success();
 }
 
 function playTick(held = false, up = true) {
   const now = performance.now();
   if (held && now - lastTickTime < 50) return;
   lastTickTime = now;
-
-  const ctx = getAudioCtx();
-  scheduleTick(ctx.currentTime, held ? 0.3 : 0.55, up);
+  playHover(up);
 }
 
-function playDoubleTick(up = true) {
-  const ctx = getAudioCtx();
-  scheduleTick(ctx.currentTime, 0.25, up);
-  scheduleTick(ctx.currentTime + 0.055, 0.15, up);
+function playTabSwitch() {
+  ensureReady();
+  tabSwitch();
+}
+
+function playUndo() {
+  ensureReady();
+  undo();
+}
+
+function playToggleOn() {
+  ensureReady();
+  toggleOn();
+}
+
+function playToggleOff() {
+  ensureReady();
+  toggleOff();
+}
+
+function playTokenSnap(on: boolean) {
+  ensureReady();
+  (on ? tokenSnapOn : tokenSnapOff)();
+}
+
+function playSwoosh() {
+  ensureReady();
+  swoosh();
 }
 
 function Arrow({
@@ -306,11 +409,15 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
       if (e.key !== "t" && e.key !== "T") return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-      setSnapToTokens((c) => !c);
+      setSnapToTokens((c) => {
+        const next = !c;
+        if (f.sound && !muted) playTokenSnap(next);
+        return next;
+      });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [f.sound, muted]);
 
   useEffect(() => {
     if (!snapMountedRef.current) {
@@ -341,7 +448,7 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
   }, [autoFocus, isMobile]);
 
   useEffect(() => {
-    if (f.sound) loadOreoBuffer();
+    if (f.sound) ensureReady();
   }, [f.sound]);
 
   useEffect(() => {
@@ -389,8 +496,8 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
       setTimeout(() => setSlideRangeIdle(true), 400);
     }, 800);
 
-
-  }, []);
+    if (soundOn) playTabSwitch();
+  }, [soundOn]);
 
 
   const applyDigitBufferRef = useRef(() => {});
@@ -413,6 +520,7 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
   const step = useCallback((direction: number, shift = false, held = false) => {
     const cs = SLIDES[slideRef.current];
     const mult = (f.shiftStep && shift) ? 10 : 1;
+    const prev = valueRef.current;
     let next: number;
     if (snapToTokensRef.current && cs.tokens && !shift) {
       const tokenNext = nextTokenValue(cs.tokens, valueRef.current, direction > 0 ? 1 : -1);
@@ -428,7 +536,11 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
     }
     valueRef.current = next;
     setValue(valueRef.current);
-    if (soundOn) playTick(held, direction > 0);
+    if (soundOn) {
+      const cycled = next !== prev && (direction > 0 ? next < prev : next > prev);
+      if (cycled) playSwoosh();
+      else playTick(held, direction > 0);
+    }
   }, [f.shiftStep, soundOn]);
 
   const triggerBudge = useCallback(
@@ -469,7 +581,6 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
 
   const reset = useCallback(() => {
     const cs = SLIDES[slideRef.current];
-    const prev = valueRef.current;
     valueRef.current = cs.original;
     setValue(cs.original);
     setIsBudging(true);
@@ -477,13 +588,7 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
     clearTimeout(budgeTimeoutRef.current);
     budgeTimeoutRef.current = setTimeout(() => setIsBudging(false), 600);
     if (f.buttonFeedback) setTimeout(() => setPressedButton(null), 70);
-    if (soundOn) {
-      if (Math.floor(prev / 10) !== Math.floor(cs.original / 10)) {
-        playDoubleTick();
-      } else {
-        playTick();
-      }
-    }
+    if (soundOn) playUndo();
   }, [f.buttonFeedback, soundOn]);
 
   const copy = useCallback(() => {
@@ -763,6 +868,8 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
                 ref={muteRef}
                 className="group flex items-center justify-center rounded-full bg-white [box-shadow:#0000000F_0px_0px_0px_1px,#0000000F_0px_1px_2px_-1px,#0000000A_0px_2px_4px] shrink-0 size-9 cursor-pointer outline-none overflow-visible"
                 onClick={() => {
+                  if (muted) playToggleOn();
+                  else playToggleOff();
                   setMuted(m => !m);
                   if (f.buttonFeedback) { setPressedButton("mute"); setTimeout(() => setPressedButton(null), 70); }
                 }}

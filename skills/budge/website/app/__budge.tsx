@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Calligraph } from "calligraph";
+import { defineSound, ensureReady } from "@web-kits/audio";
 
 export interface BudgeConfig {
   property: string;
@@ -21,96 +22,99 @@ const BUDGE_KEYFRAMES = `@keyframes __budge-shake{0%,100%{translate:0}25%{transl
 let budgeStyleInjected = false;
 
 // ---------------------------------------------------------------------------
-// Audio — subtle haptic tick via Web Audio API
+// Audio — "hover" from the mechanical patch in @web-kits/audio
+// (https://audio.raphaelsalaja.com/library/mechanical).
 // ---------------------------------------------------------------------------
 
-let audioCtx: AudioContext | null = null;
+export function setAudioBasePath(_path: string) {}
+
+// HRTF-panned tick. Centered between the ears with a subtle vertical offset:
+// up-ticks image slightly above the listener, down-ticks slightly below.
+const hover = defineSound({
+  source: { type: "noise", color: "white" },
+  filter: { type: "highpass", frequency: 6000 },
+  envelope: { attack: 0, decay: 0.008, sustain: 0, release: 0.003 },
+  gain: 0.05,
+  panner: {
+    positionX: 0,
+    positionY: 0.04,
+    positionZ: 0,
+    panningModel: "HRTF",
+  },
+});
+
+// Slightly quieter variant for the down-arrow tick, panned slightly below ear.
+const hoverDown = defineSound({
+  source: { type: "noise", color: "white" },
+  filter: { type: "highpass", frequency: 6000 },
+  envelope: { attack: 0, decay: 0.008, sustain: 0, release: 0.003 },
+  gain: 0.035,
+  panner: {
+    positionX: 0,
+    positionY: -0.04,
+    positionZ: 0,
+    panningModel: "HRTF",
+  },
+});
+
+// "success" from the minimal patch at audio.raphaelsalaja.com/library/minimal.
+const success = defineSound({
+  layers: [
+    {
+      source: { type: "sine", frequency: 523 },
+      envelope: { attack: 0, decay: 0.05, sustain: 0, release: 0.015 },
+      gain: 0.1,
+    },
+    {
+      source: { type: "sine", frequency: 784 },
+      envelope: { attack: 0, decay: 0.05, sustain: 0, release: 0.015 },
+      delay: 0.06,
+      gain: 0.08,
+    },
+  ],
+});
+
+// "undo" from the minimal patch at audio.raphaelsalaja.com/library/minimal.
+const undo = defineSound({
+  source: { type: "sine", frequency: { start: 800, end: 600 } },
+  envelope: { attack: 0, decay: 0.035, sustain: 0, release: 0.01 },
+  gain: 0.07,
+});
+
+// "swoosh" from the minimal patch at audio.raphaelsalaja.com/library/minimal.
+const swoosh = defineSound({
+  source: { type: "sine", frequency: { start: 600, end: 1400 } },
+  envelope: { attack: 0.005, decay: 0.04, sustain: 0, release: 0.015 },
+  gain: 0.05,
+});
+
 let lastTickTime = 0;
-let audioBasePath = "";
 
-export function setAudioBasePath(path: string) {
-  audioBasePath = path.replace(/\/$/, "");
-}
-
-function getAudioCtx() {
-  if (!audioCtx) audioCtx = new AudioContext();
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  return audioCtx;
-}
-
-let oreoBuffer: AudioBuffer | null = null;
-let oreoLoading = false;
-
-const OREO_SPRITES_UP: [number, number][] = [
-  [22000, 103], [12000, 109], [0, 120],
-];
-const OREO_SPRITES_DOWN: [number, number][] = [
-  [2000, 110], [4000, 105], [6000, 115],
-];
-let lastOreoIdxUp = 0;
-let lastOreoIdxDown = 0;
-const OREO_CONFIRM: [number, number] = [8000, 112];
-
-function loadOreoBuffer() {
-  if (oreoBuffer || oreoLoading) return;
-  oreoLoading = true;
-  const ctx = getAudioCtx();
-  fetch(audioBasePath + "/sounds.mp3")
-    .then(r => r.arrayBuffer())
-    .then(ab => ctx.decodeAudioData(ab))
-    .then(buf => { oreoBuffer = buf; })
-    .catch(() => { oreoLoading = false; });
-}
-
-function scheduleTick(time: number, volume: number, up = true) {
-  const ctx = getAudioCtx();
-  loadOreoBuffer();
-  if (!oreoBuffer) return;
-  const sprites = up ? OREO_SPRITES_UP : OREO_SPRITES_DOWN;
-  if (up) {
-    lastOreoIdxUp = (lastOreoIdxUp + 1) % sprites.length;
-  } else {
-    lastOreoIdxDown = (lastOreoIdxDown + 1) % sprites.length;
-  }
-  const sprite = sprites[up ? lastOreoIdxUp : lastOreoIdxDown];
-  const offset = sprite[0] / 1000;
-  const halfDur = sprite[1] / 1000 / 2;
-  const src = ctx.createBufferSource();
-  src.buffer = oreoBuffer;
-  const gain = ctx.createGain();
-  gain.gain.value = volume * (0.85 + Math.random() * 0.3);
-  src.connect(gain);
-  gain.connect(ctx.destination);
-  src.start(time, offset, halfDur);
+function playHover(up = true) {
+  ensureReady();
+  (up ? hover : hoverDown)();
 }
 
 function playConfirm() {
-  const ctx = getAudioCtx();
-  loadOreoBuffer();
-  if (!oreoBuffer) return;
-  const offset = OREO_CONFIRM[0] / 1000;
-  const halfDur = OREO_CONFIRM[1] / 1000 / 2;
-  const src = ctx.createBufferSource();
-  src.buffer = oreoBuffer;
-  const gain = ctx.createGain();
-  gain.gain.value = 0.6;
-  src.connect(gain);
-  gain.connect(ctx.destination);
-  src.start(ctx.currentTime, offset, halfDur);
+  ensureReady();
+  success();
 }
 
 function playTick(held = false, up = true) {
   const now = performance.now();
   if (held && now - lastTickTime < 50) return;
   lastTickTime = now;
-  const ctx = getAudioCtx();
-  scheduleTick(ctx.currentTime, held ? 0.3 : 0.55, up);
+  playHover(up);
 }
 
-function playDoubleTick(up = true) {
-  const ctx = getAudioCtx();
-  scheduleTick(ctx.currentTime, 0.25, up);
-  scheduleTick(ctx.currentTime + 0.055, 0.15, up);
+function playUndo() {
+  ensureReady();
+  undo();
+}
+
+function playSwoosh() {
+  ensureReady();
+  swoosh();
 }
 
 // ---------------------------------------------------------------------------
@@ -370,7 +374,7 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
   const budgeTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const stepValueRef = useRef<((direction: number, shift: boolean, held?: boolean) => void) | undefined>(undefined);
 
-  useEffect(() => { loadOreoBuffer(); }, []);
+  useEffect(() => { ensureReady(); }, []);
 
   const startHold = useCallback((dir: "up" | "down") => {
     const d = dir === "up" ? 1 : -1;
@@ -538,12 +542,16 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
 
     function stepValue(direction: number, shift: boolean, held = false) {
       let next: string;
+      let cycled = false;
 
       if (isOptions) {
         const len = config!.options!.length;
+        const prevIdx = optionIndexRef.current;
         optionIndexRef.current = ((optionIndexRef.current + direction) % len + len) % len;
+        cycled = direction > 0 ? optionIndexRef.current < prevIdx : optionIndexRef.current > prevIdx;
         next = String(config!.options![optionIndexRef.current]);
-        playTick(held, direction > 0);
+        if (cycled) playSwoosh();
+        else playTick(held, direction > 0);
       } else if (isColor) {
         const stepped = stepColor(currentValueRef.current, direction);
         if (!stepped) return;
@@ -553,15 +561,18 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
         const s = step >= 1 ? 1 : step;
         const mult = shift ? 10 : 1;
         const delta = direction * s * mult;
+        const prev = numericRef.current;
         let candidate = Math.round((numericRef.current + delta) * 1000) / 1000;
         const period = max - min + s;
         while (candidate > max + 1e-9) candidate -= period;
         while (candidate < min - 1e-9) candidate += period;
         numericRef.current = Math.round(candidate * 1000) / 1000;
+        cycled = numericRef.current !== prev && (direction > 0 ? numericRef.current < prev : numericRef.current > prev);
         next = unitRef.current
           ? numericRef.current + unitRef.current
           : String(numericRef.current);
-        playTick(held, direction > 0);
+        if (cycled) playSwoosh();
+        else playTick(held, direction > 0);
       }
 
       applyPreview(targetEl!, next);
@@ -624,7 +635,6 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
       if (e.key === "r" || e.key === "R") {
         e.preventDefault();
         const orig = config!.original;
-        const prev = numericRef.current;
         applyPreview(targetEl!, orig);
         currentValueRef.current = orig;
         setCurrentValue(orig);
@@ -633,11 +643,7 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
           numericRef.current = parseFloat(orig) || 0;
           unitRef.current = match[2];
         }
-        if (Math.floor(prev / 10) !== Math.floor(numericRef.current / 10)) {
-          playDoubleTick();
-        } else {
-          playTick();
-        }
+        playUndo();
         setIsNudging(true);
         clearTimeout(budgeTimeoutRef.current);
         budgeTimeoutRef.current = setTimeout(() => setIsNudging(false), 600);

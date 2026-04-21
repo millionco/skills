@@ -18,5 +18,7 @@
     "react-dom": "^19.1.0",
     "typescript": "^5.8.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@web-kits/audio": "^0.1.0"
+  }
 }
