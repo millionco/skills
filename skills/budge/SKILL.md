@@ -9,7 +9,7 @@ description: Use when making single-property CSS or Tailwind visual changes in N
 
 You present a floating bar on the page after making an atomic visual change. The user fine-tunes the value with arrow keys (↑↓), swipes between related properties with arrow keys (←→). **You complete your turn immediately after setting the config — no browser interaction, no waiting.**
 
-The runtime is a self-contained IIFE loaded from `https://skills-pearl.vercel.app/budge.iife.js` via `next/script`. It auto-initializes by reading a `data-budge` config element from the DOM — no wrapper component needed. It handles everything client-side: live preview on `[data-budge-target]` elements, arrow key stepping, slide navigation, audio feedback, submit (Enter — copies a generic edit prompt to clipboard), and cancel (Escape — reverts).
+The runtime is a self-contained IIFE loaded from `https://www.budge.design/budge.iife.js` via `next/script`. It auto-initializes by reading a `data-budge` config element from the DOM — no wrapper component needed. It handles everything client-side: live preview on `[data-budge-target]` elements, arrow key stepping, slide navigation, audio feedback, submit (Enter — copies a generic edit prompt to clipboard), and cancel (Escape — reverts).
 
 **In scope:** Raw CSS property values, inline styles, Tailwind utility class changes, SVG presentation attributes (`fill`, `stroke`, etc.).
 **Out of scope:** Sass/Less variables, CSS custom property definitions (`--spacing`), CSS-in-JS theme tokens. Proceed normally for these.
@@ -22,7 +22,7 @@ Grep for `budge.iife.js` in `app/layout.tsx`. If found, skip to **Step 1**. Othe
 
 ## Troubleshooting — bar does not appear
 
-1. **Script missing:** Confirm `<Script src="https://skills-pearl.vercel.app/budge.iife.js" strategy="afterInteractive" />` is in `app/layout.tsx`.
+1. **Script missing:** Confirm `<Script src="https://www.budge.design/budge.iife.js" strategy="afterInteractive" />` is in `app/layout.tsx`.
 2. **No config element:** The bar only appears when a `<div data-budge="..." hidden />` element with a non-empty `slides` array is in the DOM.
 3. **Target not found:** The element with `data-budge-target` must be in the DOM after hydration.
 

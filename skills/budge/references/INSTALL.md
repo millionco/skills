@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         {children}
-        <Script src="https://skills-pearl.vercel.app/budge.iife.js" strategy="afterInteractive" />
+        <Script src="https://www.budge.design/budge.iife.js" strategy="afterInteractive" />
       </body>
     </html>
   );
@@ -31,7 +31,7 @@ export default function Root() {
     <html lang="en">
       <body>
         <Outlet />
-        <script src="https://skills-pearl.vercel.app/budge.iife.js" />
+        <script src="https://www.budge.design/budge.iife.js" />
       </body>
     </html>
   );
@@ -46,7 +46,7 @@ In your base layout (e.g. `src/layouts/Layout.astro`):
 <html lang="en">
   <body>
     <slot />
-    <script src="https://skills-pearl.vercel.app/budge.iife.js" is:inline></script>
+    <script src="https://www.budge.design/budge.iife.js" is:inline></script>
   </body>
 </html>
 ```
@@ -58,7 +58,7 @@ In `src/app.html`:
 ```html
 <body data-sveltekit-preload-data="hover">
   %sveltekit.body%
-  <script src="https://skills-pearl.vercel.app/budge.iife.js"></script>
+  <script src="https://www.budge.design/budge.iife.js"></script>
 </body>
 ```
 
@@ -70,7 +70,7 @@ In `nuxt.config.ts`:
 export default defineNuxtConfig({
   app: {
     head: {
-      script: [{ src: "https://skills-pearl.vercel.app/budge.iife.js", defer: true }],
+      script: [{ src: "https://www.budge.design/budge.iife.js", defer: true }],
     },
   },
 });
@@ -83,7 +83,7 @@ In `index.html`:
 ```html
 <body>
   <div id="app"></div>
-  <script src="https://skills-pearl.vercel.app/budge.iife.js"></script>
+  <script src="https://www.budge.design/budge.iife.js"></script>
 </body>
 ```
 
@@ -91,7 +91,7 @@ In `index.html`:
 
 ```html
 <body>
-  <script src="https://skills-pearl.vercel.app/budge.iife.js"></script>
+  <script src="https://www.budge.design/budge.iife.js"></script>
 </body>
 ```
 
