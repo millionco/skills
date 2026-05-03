@@ -13,10 +13,11 @@ budge is a floating control bar that appears when your coding agent makes a visu
 ## How it works
 
 1. Your agent makes a single-property CSS or Tailwind change
-2. budge appears as a floating bar on the page
-3. Use ↑↓ to nudge the value, ←→ to switch between related properties
-4. Press Enter to copy a prompt to your clipboard, then paste it back to your agent
-5. Press Escape to dismiss and revert
+2. The always-on runtime detects the resulting HMR DOM change
+3. budge appears as a floating bar on the page
+4. Use ↑↓ to nudge the value, ←→ to switch between related properties
+5. Press Enter to copy a prompt to your clipboard, then paste it back to your agent
+6. Press Escape to dismiss and revert
 
 ## Installation
 
@@ -34,11 +35,11 @@ Install the skill, then type \`/budge\` to invoke it. Ask your agent to make a v
 
 ## Runtime
 
-budge is a self-contained IIFE loaded from \`https://skills-pearl.vercel.app/budge.iife.js\` via \`next/script\`. It auto-initializes by reading a \`data-budge\` config element from the DOM. It handles live preview on \`[data-budge-target]\` elements, arrow key stepping, slide navigation, audio feedback, submit, and cancel entirely client-side.
+budge is a self-contained IIFE loaded from \`https://skills-pearl.vercel.app/budge.iife.js\` via \`next/script\`. On local/dev hosts, it watches HMR-driven \`class\` and \`style\` mutations, infers the latest numeric visual property change, and mounts automatically. It also supports a \`data-budge\` config element as a fallback. It handles live preview on \`[data-budge-target]\` elements, arrow key stepping, slide navigation, audio feedback, submit, and cancel entirely client-side.
 
 ## Slide configuration
 
-The agent builds a \`slides\` array and injects it as a JSON config element in the DOM. Each slide has this shape:
+For manual fallback, the agent builds a \`slides\` array and injects it as a JSON config element in the DOM. Each slide has this shape:
 
 | Property | Type | Description |
 |----------|------|-------------|

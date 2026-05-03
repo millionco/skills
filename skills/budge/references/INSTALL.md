@@ -97,7 +97,11 @@ In `index.html`:
 
 ## How Activation Works
 
-The IIFE loads from the CDN and auto-initializes when it finds a `data-budge` config element in the DOM. No wrapper component, no files to copy. Audio assets are resolved relative to the script's origin.
+The IIFE loads from the CDN and stays inert until it can attach to a visual edit. No wrapper component, no files to copy. Audio assets are resolved relative to the script's origin.
+
+On local/dev hosts, Budge auto-detects HMR-driven `class` and `style` mutations. When it sees a focused numeric visual property change, it marks the changed element, generates slides, and mounts the bar automatically. Add `data-budge-autodetect="true"` to force this outside local/dev, or `data-budge-autodetect="false"` to disable it.
+
+The explicit config element remains available as a fallback:
 
 When the agent activates budge, it adds a config element anywhere in the body:
 

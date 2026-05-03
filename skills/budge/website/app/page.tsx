@@ -27,6 +27,9 @@ export default function HomePage() {
           <div className="[letter-spacing:0em] [white-space-collapse:preserve] font-medium text-[15px]/[22px] text-[#707070] mt-4">
             Works in Claude Code, Codex, Cursor.
           </div>
+          <div className="relative [font-synthesis:none] mt-5 w-full rounded-[12px] border border-solid border-[color(display-p3_0_0_0/0.1)] bg-[color(display-p3_0.991_0.991_0.991)] px-3.5 py-2.75 text-[13px]/[20px] font-medium text-[#707070] [box-shadow:#0000001A_0px_0px_0px_1px,#00000014_0px_1px_2px_-1px,#0000000F_0px_3px_8px_-3px] antialiased">
+            <span className="font-semibold text-[#3F3F3F]">New:</span> budge now auto-detects local style changes and opens itself when your agent nudges spacing, type, radius, or size.
+          </div>
         </div>
         <div className="relative w-full max-w-112.75 min-w-0 px-4 sm:px-0 pb-6">
           <div className="[font-synthesis:none] flex w-full min-w-0 h-fit flex-col gap-4.25 antialiased mt-8">
@@ -38,7 +41,7 @@ export default function HomePage() {
             usage
           </div>
           <div className="[letter-spacing:0em] [white-space-collapse:preserve] font-medium text-[15px]/[22px] text-[#707070] mt-4">
-            Install the skill, then type <code className="font-mono-override text-[#3F3F3F]">/budge</code> to invoke it. Ask your agent to make a visual change and budge will appear.
+            Install the skill and leave the script on the page. Ask your agent to make a visual change; on local dev, budge can detect the update and appear automatically.
           </div>
           <CodeBlock />
           <div className="mb-0 left-0 top-0 w-full min-w-0 [white-space-collapse:preserve] relative text-[#3F3F3F] font-semibold text-[15px]/[22px] mt-8">

@@ -625,6 +625,8 @@ export function BudgeMePaperPreview({ features: f = ALL_FEATURES, autoFocus }: {
     function onKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement | null)?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (e.key === "ArrowUp") {
         e.preventDefault();
         stepRef.current(1, e.shiftKey, e.repeat);

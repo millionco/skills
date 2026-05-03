@@ -7,28 +7,35 @@ description: Use when making single-property CSS or Tailwind visual changes in N
 
 **Proactive skill. Next.js App Router only.** If a task results in a single CSS property or Tailwind class change, follow this skill automatically. The user should never need to say "use budge."
 
-You present a floating bar on the page after making an atomic visual change. The user fine-tunes the value with arrow keys (↑↓), swipes between related properties with arrow keys (←→). **You complete your turn immediately after setting the config — no browser interaction, no waiting.**
+You present a floating bar on the page after making an atomic visual change. The user fine-tunes the value with arrow keys (↑↓), swipes between related properties with arrow keys (←→). **With the current runtime, complete your turn immediately after making the visual change — no browser interaction, no waiting, and no manual config unless the fallback below is needed.**
 
-The runtime is a self-contained IIFE loaded from `https://www.budge.design/budge.iife.js` via `next/script`. It auto-initializes by reading a `data-budge` config element from the DOM — no wrapper component needed. It handles everything client-side: live preview on `[data-budge-target]` elements, arrow key stepping, slide navigation, audio feedback, submit (Enter — copies a generic edit prompt to clipboard), and cancel (Escape — reverts).
+The runtime is a self-contained IIFE loaded from `https://www.budge.design/budge.iife.js` via `next/script`. On local/dev hosts it stays on the page, watches HMR-driven `class`/`style` DOM changes, infers the latest numeric visual property change, marks the changed element, and mounts Budge automatically. It still supports the explicit `data-budge` config element as a fallback. Everything is handled client-side: live preview on `[data-budge-target]` elements, arrow key stepping, slide navigation, audio feedback, submit (Enter — copies an edit prompt to clipboard), and cancel (Escape — reverts).
 
 **In scope:** Raw CSS property values, inline styles, Tailwind utility class changes, SVG presentation attributes (`fill`, `stroke`, etc.).
 **Out of scope:** Sass/Less variables, CSS custom property definitions (`--spacing`), CSS-in-JS theme tokens. Proceed normally for these.
 
 ## Installation
 
-Grep for `budge.iife.js` in `app/layout.tsx`. If found, skip to **Step 1**. Otherwise, read `references/INSTALL.md` and follow its instructions.
+Grep for `budge.iife.js` in `app/layout.tsx`. If found, make the requested visual change and stop. Otherwise, read `references/INSTALL.md` and follow its instructions.
+
+## Default Flow
+
+For a single raw CSS value or Tailwind class token change, just make the source edit. The always-on runtime should attach Budge to the resulting DOM change after HMR. Tell the user: "I've changed X to Y. Use ↑↓ to fine-tune, ←→ to switch properties."
+
+Use the manual steps below only if the bar does not appear or the change cannot be inferred from one numeric `class`/`style` DOM mutation.
 
 ---
 
 ## Troubleshooting — bar does not appear
 
 1. **Script missing:** Confirm `<Script src="https://www.budge.design/budge.iife.js" strategy="afterInteractive" />` is in `app/layout.tsx`.
-2. **No config element:** The bar only appears when a `<div data-budge="..." hidden />` element with a non-empty `slides` array is in the DOM.
-3. **Target not found:** The element with `data-budge-target` must be in the DOM after hydration.
+2. **Auto-detect disabled:** Auto-detect runs by default on local/dev hosts. Force it with `data-budge-autodetect="true"` on the script tag, or disable it with `"false"`.
+3. **No inferable DOM change:** The fallback bar only appears when a `<div data-budge="..." hidden />` element with a non-empty `slides` array is in the DOM.
+4. **Target not found:** The element with `data-budge-target` must be in the DOM after hydration.
 
 ---
 
-## Step 1 — Trigger Test
+## Manual Fallback — Trigger Test
 
 After making a change, apply this mechanical test. Do NOT use subjective judgment.
 

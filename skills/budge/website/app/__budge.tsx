@@ -632,6 +632,8 @@ export function Budge({ config }: { config?: BudgeConfig | null }) {
     }
 
     function onKeyDown(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (e.key === "r" || e.key === "R") {
         e.preventDefault();
         const orig = config!.original;

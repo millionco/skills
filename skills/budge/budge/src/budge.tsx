@@ -35,6 +35,8 @@ export interface BudgeSlide {
   type?: "numeric" | "color";
   scale?: BudgeScale | null;
   tokens?: BudgeToken[];
+  file?: string;
+  line?: number;
 }
 
 type TokenBuckets = Record<BudgeScale, BudgeToken[]>;
@@ -94,6 +96,10 @@ function discoverTokens(): TokenBuckets {
 
 function resolveScale(slide: BudgeSlide): BudgeScale | null {
   return slide.scale !== undefined ? slide.scale : defaultScaleForProperty(slide.property);
+}
+
+function propertiesForSlide(property: string): string[] {
+  return property.split(",").map((p) => p.trim()).filter(Boolean);
 }
 
 function tokensForSlide(slide: BudgeSlide, discovered: TokenBuckets): BudgeToken[] | null {
@@ -348,6 +354,7 @@ function Arrow({
 
 export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; slides?: BudgeSlide[] } = {}) {
   const SLIDES = slidesProp && slidesProp.length > 0 ? slidesProp : DEFAULT_SLIDES;
+  const slidesKey = JSON.stringify(SLIDES);
   const f = { keyboard: true, expandValue: true, animatedDigits: true, arrowBounce: true, barPhysics: true, boundaryShake: true, sound: true, buttonFeedback: true, numberInput: true, shiftStep: true, idleOpacity: true, showLabel: true, showButtons: true, showText: true };
   const [value, setValue] = useState(SLIDES[0].value);
   const [typedRaw, setTypedRaw] = useState<string | null>(null);
@@ -416,22 +423,49 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
 
   const [slide, setSlide] = useState(0);
   const slideRef = useRef(0);
-  const s = SLIDES[slide];
+  const s = SLIDES[slide] ?? SLIDES[0];
   const soundOn = f.sound && !muted;
+
+  useEffect(() => {
+    const initial = SLIDES[0]?.value ?? 0;
+    slideRef.current = 0;
+    slideValuesRef.current = SLIDES.map((slide) => slide.value);
+    valueRef.current = initial;
+    setSlide(0);
+    setValue(initial);
+    setTypedRaw(null);
+    setIsBudging(false);
+    setConfirmed(false);
+    setShowPrompt(false);
+    setActiveKey(null);
+    digitBufferRef.current = "";
+    clearTimeout(digitTimeoutRef.current);
+    clearTimeout(budgeTimeoutRef.current);
+    clearTimeout(confirmedTimeoutRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slidesKey]);
 
   useEffect(() => {
     const el = document.querySelector("[data-budge-target]") as HTMLElement | null;
     if (!el) return;
-    const cs = SLIDES[slide];
+    const cs = SLIDES[slide] ?? SLIDES[0];
+    if (!cs) return;
     const scale = resolveScale(cs);
     const snapTokens = snapEnabled && scale && scale !== "color"
       ? tokensForSlide(cs, discoveredRef.current)
       : null;
     const matched = snapTokens ? matchToken(snapTokens, value) : null;
-    if (matched) el.style.setProperty(cs.property, matched.value);
-    else if (cs.type === "color") el.style.setProperty(cs.property, `hsl(${value}, 70%, 55%)`);
-    else if (cs.unit === "%") el.style.setProperty(cs.property, String(value / 100));
-    else el.style.setProperty(cs.property, `${value}${cs.unit}`);
+    const nextValue = matched
+      ? matched.value
+      : cs.type === "color"
+        ? `hsl(${value}, 70%, 55%)`
+        : cs.unit === "%"
+          ? String(value / 100)
+          : `${value}${cs.unit}`;
+    (window as any).__BUDGE_LAST_PREVIEW_AT__ = performance.now();
+    for (const property of propertiesForSlide(cs.property)) {
+      el.style.setProperty(property, nextValue);
+    }
   }, [value, slide, SLIDES]);
 
   const goToSlide = useCallback((direction: number) => {
@@ -572,7 +606,10 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     const val = matched && scale
       ? `var(--${scale}-${matched.name})`
       : cs.type === "color" ? `hsl(${valueRef.current}, 70%, 55%)` : `${valueRef.current}${cs.unit}`;
-    const prompt = `Set \`${cs.property}\` to \`${val}\``;
+    const location = cs.file
+      ? ` in \`${cs.file}\`${cs.line ? ` at line ${cs.line}` : ""}`
+      : "";
+    const prompt = `Set \`${cs.property}\` to \`${val}\`${location}`;
     navigator.clipboard?.writeText(prompt);
     setShowPrompt(true);
     setConfirmed(true);
@@ -598,6 +635,8 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     if (!f.keyboard) return;
 
     function onKeyDown(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (e.key === "ArrowUp") {
         e.preventDefault();
         stepRef.current(1, e.shiftKey, e.repeat);
@@ -726,7 +765,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
 
   return (
     <>
-    <div ref={wrapperRef} className="relative">
+    <div ref={wrapperRef} className="relative" data-budge-ui="">
     <div
       ref={containerRef}
       tabIndex={0}
@@ -785,7 +824,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
               letterSpacing: "0.01em",
               whiteSpace: "nowrap",
             }}>
-              {toastLabel ?? SLIDES[slide].label}
+              {toastLabel ?? s.label}
             </span>
           </div>
           <div style={{
