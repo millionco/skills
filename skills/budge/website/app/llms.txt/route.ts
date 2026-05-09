@@ -24,7 +24,7 @@ budge is a floating control bar that appears when your coding agent makes a visu
 Install the skill, then type \`/budge\` to invoke it. Ask your agent to make a visual change and budge will appear.
 
 \`\`\`
-/skill install https://skills-pearl.vercel.app/budge
+/skill install https://budge.design/budge
 \`\`\`
 
 ## Scope
@@ -35,7 +35,7 @@ Install the skill, then type \`/budge\` to invoke it. Ask your agent to make a v
 
 ## Runtime
 
-budge is a self-contained IIFE loaded from \`https://skills-pearl.vercel.app/budge.iife.js\` via \`next/script\`. On local/dev hosts, it watches HMR-driven \`class\` and \`style\` mutations, infers the latest numeric visual property change, and mounts automatically. It also bundles React Grab for manual selection: hold \`Cmd+Shift+B\` on macOS or \`Ctrl+Shift+B\` elsewhere, select an element, and budge opens without showing React Grab's overlays or toolbar. It also supports a \`data-budge\` config element as a fallback. It handles live preview on \`[data-budge-target]\` elements, arrow key stepping, slide navigation, audio feedback, submit, and cancel entirely client-side.
+budge is a self-contained IIFE loaded from \`https://budge.design/budge.iife.js\` via \`next/script\`. On local/dev hosts, it watches HMR-driven \`class\` and \`style\` mutations, infers the latest numeric visual property change, and mounts automatically. It also bundles React Grab for manual selection: hold \`Cmd+Shift+B\` on macOS or \`Ctrl+Shift+B\` elsewhere, select an element, and budge opens without showing React Grab's overlays or toolbar. It also supports a \`data-budge\` config element as a fallback. It handles live preview on \`[data-budge-target]\` elements, arrow key stepping, slide navigation, audio feedback, submit, and cancel entirely client-side.
 
 ## Slide configuration
 
@@ -68,7 +68,7 @@ Tailwind classes are resolved to CSS properties and pixel values (spacing scale 
 
 ## Links
 
-- Website: https://skills-pearl.vercel.app
+- Website: https://budge.design
 - Next.js App Router only
 `;
 
