@@ -1,5 +1,7 @@
 import { createIsolet } from "isolet-js";
 import { react } from "isolet-js/react";
+import { init as initReactGrab } from "react-grab/core";
+import type { ReactGrabAPI } from "react-grab/core";
 import { Budge, setAssetBase } from "./budge";
 import type { BudgeSlide } from "./budge";
 
@@ -32,12 +34,21 @@ const AUTO_DETECT_ATTR = "data-budge-autodetect";
 const BUDGE_TARGET_ATTR = "data-budge-target";
 const BUDGE_UI_SELECTOR = "[data-budge-ui]";
 const BUDGE_CONFIG_SELECTOR = "[data-budge]";
+const REACT_GRAB_UI_SELECTOR = [
+  "[data-react-grab]",
+  "[data-react-grab-input]",
+  "[data-react-grab-ignore]",
+  "[data-react-grab-ignore-events]",
+].join(",");
+const BUDGE_REACT_GRAB_PLUGIN_NAME = "budge-select";
 
 let explicitConfigFingerprint = "";
 let autoConfig: BudgeRuntimeConfig | null = null;
 let autoConfigFingerprint = "";
 let autoTarget: HTMLElement | null = null;
 let autoTargetHadMarker = false;
+let reactGrabApi: ReactGrabAPI | null = null;
+let reactGrabStarted = false;
 
 function readConfig(): BudgeRuntimeConfig | null {
   const el = document.querySelector("[data-budge]");
@@ -149,7 +160,8 @@ function shouldIgnoreElement(el: Element) {
   return el === document.documentElement ||
     el === document.body ||
     el.closest(BUDGE_UI_SELECTOR) ||
-    el.closest(BUDGE_CONFIG_SELECTOR);
+    el.closest(BUDGE_CONFIG_SELECTOR) ||
+    el.closest(REACT_GRAB_UI_SELECTOR);
 }
 
 function isRecentBudgePreview() {
@@ -376,6 +388,87 @@ function buildSlides(primary: PropertyChange, after: StyleSnapshot): BudgeSlide[
   return slides;
 }
 
+function sameNumericValue(a: NumericValue, b: NumericValue) {
+  if (a.unit !== b.unit) return false;
+  return Math.abs(a.value - b.value) < 0.5;
+}
+
+function alignedValue(snapshot: StyleSnapshot, properties: TrackedProperty[]) {
+  const values = properties.map((property) => parseNumeric(snapshot[property]));
+  if (values.some((value) => !value)) return null;
+  const first = values[0]!;
+  return values.every((value) => value && sameNumericValue(first, value)) ? first : null;
+}
+
+function nonZero(value: NumericValue | null) {
+  return !!value && Math.abs(value.value) >= 0.5;
+}
+
+function buildSelectionSlides(el: HTMLElement): BudgeSlide[] {
+  const snapshot = snapshotElement(el);
+  const slides: BudgeSlide[] = [];
+  const seen = new Set<string>();
+
+  const pushSlide = (property: string, label: string, value: NumericValue | null) => {
+    if (!value || seen.has(property) || slides.length >= 4) return;
+    slides.push(buildSlide(property, label, value, value));
+    seen.add(property);
+  };
+
+  const pushBoxGroup = (
+    label: string,
+    property: string,
+    allProperties: TrackedProperty[],
+    blockProperties: TrackedProperty[],
+    inlineProperties: TrackedProperty[],
+  ) => {
+    const all = alignedValue(snapshot, allProperties);
+    if (nonZero(all)) {
+      pushSlide(property, label, all);
+      return;
+    }
+
+    const block = alignedValue(snapshot, blockProperties);
+    const inline = alignedValue(snapshot, inlineProperties);
+    pushSlide(`${property}-top,${property}-bottom`, `${label}-y`, nonZero(block) ? block : null);
+    pushSlide(`${property}-left,${property}-right`, `${label}-x`, nonZero(inline) ? inline : null);
+  };
+
+  pushBoxGroup(
+    "padding",
+    "padding",
+    ["padding-top", "padding-right", "padding-bottom", "padding-left"],
+    ["padding-top", "padding-bottom"],
+    ["padding-left", "padding-right"],
+  );
+
+  pushBoxGroup(
+    "margin",
+    "margin",
+    ["margin-top", "margin-right", "margin-bottom", "margin-left"],
+    ["margin-top", "margin-bottom"],
+    ["margin-left", "margin-right"],
+  );
+
+  pushSlide("gap", "gap", nonZero(parseNumeric(snapshot.gap)) ? parseNumeric(snapshot.gap) : null);
+  pushSlide("font-size", "font size", parseNumeric(snapshot["font-size"]));
+  pushSlide("line-height", "line height", parseNumeric(snapshot["line-height"]));
+
+  const radius = alignedValue(snapshot, [
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-bottom-right-radius",
+    "border-bottom-left-radius",
+  ]);
+  pushSlide("border-radius", "border radius", nonZero(radius) ? radius : null);
+
+  pushSlide("width", "width", parseNumeric(snapshot.width));
+  pushSlide("height", "height", parseNumeric(snapshot.height));
+  pushSlide("opacity", "opacity", parseNumeric(snapshot.opacity));
+
+  return slides;
+}
+
 function updateAutoTarget(el: HTMLElement) {
   if (autoTarget && autoTarget !== el && !autoTargetHadMarker) {
     autoTarget.removeAttribute(BUDGE_TARGET_ATTR);
@@ -394,7 +487,7 @@ function setAutoConfig(el: HTMLElement, slides: BudgeSlide[]) {
 }
 
 async function attachSourceContext(el: HTMLElement, fingerprint: string) {
-  const api = (window as any).__REACT_GRAB__;
+  const api = reactGrabApi ?? (window as any).__REACT_GRAB__;
   if (!api?.getSource || !autoConfig?.slides) return;
 
   try {
@@ -412,6 +505,52 @@ async function attachSourceContext(el: HTMLElement, fingerprint: string) {
     sync();
   } catch {
     // Source lookup is opportunistic; Budge still works without React Grab.
+  }
+}
+
+function budgeActivationKey() {
+  const platform = navigator.platform || "";
+  const isApple = /Mac|iPhone|iPad|iPod/.test(platform);
+  return isApple ? "Meta+Shift+B" : "Control+Shift+B";
+}
+
+function startReactGrabSelection() {
+  if (reactGrabStarted) return;
+  reactGrabStarted = true;
+
+  try {
+    const api = initReactGrab({
+      activationMode: "hold",
+      activationKey: budgeActivationKey(),
+      allowActivationInsideInput: false,
+      freezeReactUpdates: false,
+    });
+
+    reactGrabApi = api;
+    api.registerPlugin({
+      name: BUDGE_REACT_GRAB_PLUGIN_NAME,
+      theme: {
+        selectionBox: { enabled: false },
+        dragBox: { enabled: false },
+        grabbedBoxes: { enabled: false },
+        elementLabel: { enabled: false },
+        toolbar: { enabled: false },
+      },
+      hooks: {
+        onElementSelect(element) {
+          if (!(element instanceof HTMLElement) || shouldIgnoreElement(element)) return true;
+
+          const slides = buildSelectionSlides(element);
+          if (slides.length > 0) {
+            setAutoConfig(element, slides);
+          }
+          api.deactivate();
+          return true;
+        },
+      },
+    });
+  } catch {
+    reactGrabApi = null;
   }
 }
 
@@ -488,6 +627,7 @@ if (typeof document !== "undefined") {
   const init = () => {
     sync();
     startAutoDetect();
+    startReactGrabSelection();
 
     const observer = new MutationObserver(sync);
     observer.observe(document.documentElement, {
