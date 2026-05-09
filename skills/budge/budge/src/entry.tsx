@@ -364,7 +364,7 @@ function buildSlide(property: string, label: string, before: NumericValue, after
 function buildSlides(primary: PropertyChange, after: StyleSnapshot): BudgeSlide[] {
   const property = primary.property;
   const slides = [buildSlide(property, property.replace(/,/g, " + "), primary.before, primary.after)];
-  const seen = new Set([property]);
+  const seen = new Set<string>([property]);
 
   for (const related of relatedProperties(property)) {
     if (seen.has(related)) continue;
