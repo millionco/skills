@@ -17,6 +17,7 @@
     "motion": "^11.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-grab": "^0.1.33",
     "typescript": "^5.8.0"
   }
 }
