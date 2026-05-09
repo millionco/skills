@@ -1,7 +1,7 @@
 import { createIsolet } from "isolet-js";
 import { react } from "isolet-js/react";
 import { init as initReactGrab } from "react-grab/core";
-import type { ReactGrabAPI } from "react-grab/core";
+import type { OverlayBounds, ReactGrabAPI } from "react-grab/core";
 import { Budge, setAssetBase } from "./budge";
 import type { BudgeSlide } from "./budge";
 
@@ -41,6 +41,8 @@ const REACT_GRAB_UI_SELECTOR = [
   "[data-react-grab-ignore-events]",
 ].join(",");
 const BUDGE_REACT_GRAB_PLUGIN_NAME = "budge-select";
+const BUDGE_HIGHLIGHT_BORDER = "#F59E0B";
+const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
 
 let explicitConfigFingerprint = "";
 let autoConfig: BudgeRuntimeConfig | null = null;
@@ -49,6 +51,7 @@ let autoTarget: HTMLElement | null = null;
 let autoTargetHadMarker = false;
 let reactGrabApi: ReactGrabAPI | null = null;
 let reactGrabStarted = false;
+let reactGrabHighlightEl: HTMLDivElement | null = null;
 
 function readConfig(): BudgeRuntimeConfig | null {
   const el = document.querySelector("[data-budge]");
@@ -162,6 +165,52 @@ function shouldIgnoreElement(el: Element) {
     el.closest(BUDGE_UI_SELECTOR) ||
     el.closest(BUDGE_CONFIG_SELECTOR) ||
     el.closest(REACT_GRAB_UI_SELECTOR);
+}
+
+function removeReactGrabHighlight() {
+  reactGrabHighlightEl?.remove();
+  reactGrabHighlightEl = null;
+}
+
+function getReactGrabHighlight() {
+  if (reactGrabHighlightEl?.isConnected) return reactGrabHighlightEl;
+
+  const el = document.createElement("div");
+  el.setAttribute("data-budge-ui", "");
+  el.setAttribute("data-budge-react-grab-highlight", "");
+  el.style.cssText = [
+    "position:fixed",
+    "pointer-events:none",
+    "box-sizing:border-box",
+    "z-index:2147483645",
+    "border:2px solid " + BUDGE_HIGHLIGHT_BORDER,
+    "background:" + BUDGE_HIGHLIGHT_FILL,
+    "box-shadow:none",
+    "transition:left 80ms ease,top 80ms ease,width 80ms ease,height 80ms ease,opacity 80ms ease",
+  ].join(";");
+  document.body.appendChild(el);
+  reactGrabHighlightEl = el;
+  return el;
+}
+
+function updateReactGrabHighlight(
+  visible: boolean,
+  bounds: OverlayBounds | null,
+  element: Element | null,
+) {
+  if (!visible || !bounds || !element || shouldIgnoreElement(element)) {
+    removeReactGrabHighlight();
+    return;
+  }
+
+  const el = getReactGrabHighlight();
+  el.style.left = `${bounds.x}px`;
+  el.style.top = `${bounds.y}px`;
+  el.style.width = `${bounds.width}px`;
+  el.style.height = `${bounds.height}px`;
+  el.style.borderRadius = bounds.borderRadius || "6px";
+  el.style.transform = bounds.transform || "";
+  el.style.opacity = "1";
 }
 
 function isRecentBudgePreview() {
@@ -537,9 +586,16 @@ function startReactGrabSelection() {
         toolbar: { enabled: false },
       },
       hooks: {
+        onDeactivate() {
+          removeReactGrabHighlight();
+        },
+        onSelectionBox(visible, bounds, element) {
+          updateReactGrabHighlight(visible, bounds, element);
+        },
         onElementSelect(element) {
           if (!(element instanceof HTMLElement) || shouldIgnoreElement(element)) return true;
 
+          removeReactGrabHighlight();
           const slides = buildSelectionSlides(element);
           if (slides.length > 0) {
             setAutoConfig(element, slides);
