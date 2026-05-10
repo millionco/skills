@@ -566,13 +566,22 @@ async function attachSourceContext(el: HTMLElement, fingerprint: string) {
   }
 }
 
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return target.isContentEditable ||
+    tag === "input" ||
+    tag === "textarea" ||
+    tag === "select";
+}
+
 function isBudgeActivationEvent(event: KeyboardEvent) {
-  const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform || "");
-  const isA = event.key.toLowerCase() === "a" || event.code === "KeyA";
-  if (isApple) {
-    return event.metaKey && event.ctrlKey && !event.shiftKey && !event.altKey && isA;
-  }
-  return event.ctrlKey && event.altKey && !event.metaKey && !event.shiftKey && isA;
+  return (event.key === " " || event.code === "Space") &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    !isEditableTarget(event.target);
 }
 
 function getPrimitiveTargetAt(x: number, y: number) {
@@ -636,17 +645,14 @@ function startPrimitiveSelectionRuntime() {
     "keyup",
     (event) => {
       if (!primitiveSelectionActive) return;
-      if (
-        isBudgeActivationEvent(event) ||
-        event.key === "Meta" ||
-        event.key === "Control" ||
-        event.key === "Alt"
-      ) {
+      if (event.key === " " || event.code === "Space") {
         stopPrimitiveSelection();
       }
     },
     { capture: true },
   );
+
+  window.addEventListener("blur", stopPrimitiveSelection);
 
   window.addEventListener(
     "pointermove",
