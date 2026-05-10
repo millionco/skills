@@ -116,6 +116,28 @@ function matchToken(tokens: BudgeToken[], value: number, epsilon = 0.5): BudgeTo
   return null;
 }
 
+function formatSlideValue(
+  slide: BudgeSlide,
+  value: number,
+  snapEnabled: boolean,
+  discovered: TokenBuckets,
+) {
+  const scale = resolveScale(slide);
+  const snapTokens = snapEnabled && scale && scale !== "color"
+    ? tokensForSlide(slide, discovered)
+    : null;
+  const matched = snapTokens ? matchToken(snapTokens, value) : null;
+
+  if (matched && scale) return `var(--${scale}-${matched.name})`;
+  if (slide.type === "color") return `hsl(${value}, 70%, 55%)`;
+  return `${value}${slide.unit}`;
+}
+
+function slideLocation(slide: BudgeSlide) {
+  if (!slide.file) return "";
+  return ` in \`${slide.file}\`${slide.line ? ` at line ${slide.line}` : ""}`;
+}
+
 function nextTokenIndex(tokens: BudgeToken[], value: number, direction: number, shift: boolean): number {
   let curIdx = 0, bestDist = Infinity;
   for (let i = 0; i < tokens.length; i++) {
@@ -596,20 +618,33 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
   }, [f.buttonFeedback, soundOn]);
 
   const copy = useCallback(() => {
-    const idx = slideRef.current;
-    const cs = SLIDES[idx];
-    const scale = resolveScale(cs);
-    const snapTokens = snapEnabledRef.current && scale && scale !== "color"
-      ? tokensForSlide(cs, discoveredRef.current)
-      : null;
-    const matched = snapTokens ? matchToken(snapTokens, valueRef.current) : null;
-    const val = matched && scale
-      ? `var(--${scale}-${matched.name})`
-      : cs.type === "color" ? `hsl(${valueRef.current}, 70%, 55%)` : `${valueRef.current}${cs.unit}`;
-    const location = cs.file
-      ? ` in \`${cs.file}\`${cs.line ? ` at line ${cs.line}` : ""}`
+    slideValuesRef.current[slideRef.current] = valueRef.current;
+
+    const assignments = SLIDES.map((slide, idx) => ({
+      property: slide.property,
+      value: formatSlideValue(
+        slide,
+        slideValuesRef.current[idx] ?? slide.value,
+        snapEnabledRef.current,
+        discoveredRef.current,
+      ),
+      location: slideLocation(slide),
+    }));
+    const sharedLocation = assignments.every(
+      (assignment) => assignment.location === assignments[0]?.location,
+    )
+      ? assignments[0]?.location ?? ""
       : "";
-    const prompt = `Set \`${cs.property}\` to \`${val}\`${location}`;
+
+    const prompt = assignments.length === 1
+      ? `Set \`${assignments[0].property}\` to \`${assignments[0].value}\`${assignments[0].location}`
+      : [
+          `Set these properties${sharedLocation}:`,
+          ...assignments.map((assignment) => {
+            const location = sharedLocation ? "" : assignment.location;
+            return `- \`${assignment.property}\` to \`${assignment.value}\`${location}`;
+          }),
+        ].join("\n");
     navigator.clipboard?.writeText(prompt);
     setShowPrompt(true);
     setConfirmed(true);
