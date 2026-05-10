@@ -1,7 +1,7 @@
 import { createIsolet } from "isolet-js";
 import { react } from "isolet-js/react";
 import { init as initReactGrab } from "react-grab/core";
-import type { OverlayBounds, ReactGrabAPI } from "react-grab/core";
+import type { ReactGrabAPI, ReactGrabState } from "react-grab/core";
 import { Budge, setAssetBase } from "./budge";
 import type { BudgeSlide } from "./budge";
 
@@ -52,6 +52,7 @@ let autoTargetHadMarker = false;
 let reactGrabApi: ReactGrabAPI | null = null;
 let reactGrabStarted = false;
 let reactGrabHighlightEl: HTMLDivElement | null = null;
+let reactGrabSuppressStyleEl: HTMLStyleElement | null = null;
 
 function readConfig(): BudgeRuntimeConfig | null {
   const el = document.querySelector("[data-budge]");
@@ -172,6 +173,27 @@ function removeReactGrabHighlight() {
   reactGrabHighlightEl = null;
 }
 
+function ensureReactGrabSuppressStyles() {
+  if (reactGrabSuppressStyleEl?.isConnected) return;
+
+  const style = document.createElement("style");
+  style.setAttribute("data-budge-ui", "");
+  style.setAttribute("data-budge-react-grab-suppress", "");
+  style.textContent = `
+    canvas[data-react-grab-overlay-canvas] {
+      display: none !important;
+      opacity: 0 !important;
+    }
+
+    [data-react-grab-frozen] {
+      box-shadow: none !important;
+      filter: none !important;
+    }
+  `;
+  document.head.appendChild(style);
+  reactGrabSuppressStyleEl = style;
+}
+
 function getReactGrabHighlight() {
   if (reactGrabHighlightEl?.isConnected) return reactGrabHighlightEl;
 
@@ -182,7 +204,7 @@ function getReactGrabHighlight() {
     "position:fixed",
     "pointer-events:none",
     "box-sizing:border-box",
-    "z-index:2147483645",
+    "z-index:2147483646",
     "border:2px solid " + BUDGE_HIGHLIGHT_BORDER,
     "background:" + BUDGE_HIGHLIGHT_FILL,
     "box-shadow:none",
@@ -193,24 +215,34 @@ function getReactGrabHighlight() {
   return el;
 }
 
-function updateReactGrabHighlight(
-  visible: boolean,
-  bounds: OverlayBounds | null,
-  element: Element | null,
-) {
-  if (!visible || !bounds || !element || shouldIgnoreElement(element)) {
+function updateReactGrabHighlightForElement(element: Element | null) {
+  if (!element || shouldIgnoreElement(element)) {
+    removeReactGrabHighlight();
+    return;
+  }
+
+  const bounds = element.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) {
     removeReactGrabHighlight();
     return;
   }
 
   const el = getReactGrabHighlight();
-  el.style.left = `${bounds.x}px`;
-  el.style.top = `${bounds.y}px`;
+  const computed = getComputedStyle(element);
+  el.style.left = `${bounds.left}px`;
+  el.style.top = `${bounds.top}px`;
   el.style.width = `${bounds.width}px`;
   el.style.height = `${bounds.height}px`;
-  el.style.borderRadius = bounds.borderRadius || "6px";
-  el.style.transform = bounds.transform || "";
+  el.style.borderRadius = computed.borderRadius || "6px";
+  el.style.transform = "";
   el.style.opacity = "1";
+}
+
+function updateReactGrabHighlightFromState(state: ReactGrabState) {
+  const target = state.isActive && !state.isDragging && !state.isCopying
+    ? state.targetElement
+    : null;
+  updateReactGrabHighlightForElement(target);
 }
 
 function isRecentBudgePreview() {
@@ -566,6 +598,7 @@ function budgeActivationKey() {
 function startReactGrabSelection() {
   if (reactGrabStarted) return;
   reactGrabStarted = true;
+  ensureReactGrabSuppressStyles();
 
   try {
     const api = initReactGrab({
@@ -589,8 +622,8 @@ function startReactGrabSelection() {
         onDeactivate() {
           removeReactGrabHighlight();
         },
-        onSelectionBox(visible, bounds, element) {
-          updateReactGrabHighlight(visible, bounds, element);
+        onStateChange(state) {
+          updateReactGrabHighlightFromState(state);
         },
         onElementSelect(element) {
           if (!(element instanceof HTMLElement) || shouldIgnoreElement(element)) return true;
