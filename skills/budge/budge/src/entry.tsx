@@ -566,17 +566,13 @@ async function attachSourceContext(el: HTMLElement, fingerprint: string) {
   }
 }
 
-function budgeActivationKey() {
-  const platform = navigator.platform || "";
-  const isApple = /Mac|iPhone|iPad|iPod/.test(platform);
-  return isApple ? "Meta+Shift+B" : "Control+Shift+B";
-}
-
 function isBudgeActivationEvent(event: KeyboardEvent) {
   const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform || "");
-  const hasPlatformModifier = isApple ? event.metaKey : event.ctrlKey;
-  const isB = event.key.toLowerCase() === "b" || event.code === "KeyB";
-  return hasPlatformModifier && event.shiftKey && !event.altKey && isB;
+  const isA = event.key.toLowerCase() === "a" || event.code === "KeyA";
+  if (isApple) {
+    return event.metaKey && event.ctrlKey && !event.shiftKey && !event.altKey && isA;
+  }
+  return event.ctrlKey && event.altKey && !event.metaKey && !event.shiftKey && isA;
 }
 
 function getPrimitiveTargetAt(x: number, y: number) {
@@ -640,7 +636,12 @@ function startPrimitiveSelectionRuntime() {
     "keyup",
     (event) => {
       if (!primitiveSelectionActive) return;
-      if (isBudgeActivationEvent(event) || event.key === "Meta" || event.key === "Control" || event.key === "Shift") {
+      if (
+        isBudgeActivationEvent(event) ||
+        event.key === "Meta" ||
+        event.key === "Control" ||
+        event.key === "Alt"
+      ) {
         stopPrimitiveSelection();
       }
     },
