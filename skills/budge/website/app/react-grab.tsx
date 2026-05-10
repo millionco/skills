@@ -8,20 +8,23 @@ type ReactGrabRuntimeState = ReturnType<ReactGrabAPI["getState"]>;
 const BUDGE_HIGHLIGHT_BORDER = "#F59E0B";
 const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
 const REACT_GRAB_SUPPRESS_STYLE_ATTR = "data-budge-react-grab-suppress";
-const REACT_GRAB_SUPPRESS_CSS = `
+const REACT_GRAB_DOCUMENT_SUPPRESS_CSS = `
   canvas[data-react-grab-overlay-canvas] {
     display: none !important;
-    opacity: 0 !important;
-  }
-
-  div[style*="box-shadow"][style*="inset"] {
-    box-shadow: none !important;
     opacity: 0 !important;
   }
 
   [data-react-grab-frozen] {
     box-shadow: none !important;
     filter: none !important;
+  }
+`;
+const REACT_GRAB_SHADOW_SUPPRESS_CSS = `
+  ${REACT_GRAB_DOCUMENT_SUPPRESS_CSS}
+
+  div[style*="box-shadow"][style*="inset"] {
+    box-shadow: none !important;
+    opacity: 0 !important;
   }
 `;
 
@@ -55,7 +58,9 @@ function injectSuppressStyle(root: Document | ShadowRoot) {
   const style = document.createElement("style");
   style.setAttribute("data-budge-ui", "");
   style.setAttribute(REACT_GRAB_SUPPRESS_STYLE_ATTR, "");
-  style.textContent = REACT_GRAB_SUPPRESS_CSS;
+  style.textContent = root instanceof Document
+    ? REACT_GRAB_DOCUMENT_SUPPRESS_CSS
+    : REACT_GRAB_SHADOW_SUPPRESS_CSS;
 
   if (root instanceof Document) {
     root.head.appendChild(style);
