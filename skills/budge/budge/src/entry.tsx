@@ -1,7 +1,7 @@
 import { createIsolet } from "isolet-js";
 import { react } from "isolet-js/react";
 import { init as initReactGrab } from "react-grab/core";
-import type { ReactGrabAPI, ReactGrabState } from "react-grab/core";
+import type { ReactGrabAPI } from "react-grab/core";
 import { Budge, setAssetBase } from "./budge";
 import type { BudgeSlide } from "./budge";
 
@@ -29,6 +29,7 @@ export const widget = createIsolet({
 });
 
 type BudgeRuntimeConfig = { slides?: BudgeSlide[]; autoFocus?: boolean };
+type ReactGrabRuntimeState = ReturnType<ReactGrabAPI["getState"]>;
 
 const AUTO_DETECT_ATTR = "data-budge-autodetect";
 const BUDGE_TARGET_ATTR = "data-budge-target";
@@ -238,7 +239,7 @@ function updateReactGrabHighlightForElement(element: Element | null) {
   el.style.opacity = "1";
 }
 
-function updateReactGrabHighlightFromState(state: ReactGrabState) {
+function updateReactGrabHighlightFromState(state: ReactGrabRuntimeState) {
   const target = state.isActive && !state.isDragging && !state.isCopying
     ? state.targetElement
     : null;

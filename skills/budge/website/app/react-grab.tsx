@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import type { ReactGrabState } from "react-grab/core";
+import type { ReactGrabAPI } from "react-grab/core";
+
+type ReactGrabRuntimeState = ReturnType<ReactGrabAPI["getState"]>;
 
 const BUDGE_HIGHLIGHT_BORDER = "#F59E0B";
 const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
@@ -60,7 +62,7 @@ export function ReactGrab() {
       highlightEl = null;
     };
 
-    const updateHighlight = (state: ReactGrabState) => {
+    const updateHighlight = (state: ReactGrabRuntimeState) => {
       const target = state.isActive && !state.isDragging && !state.isCopying
         ? state.targetElement
         : null;
