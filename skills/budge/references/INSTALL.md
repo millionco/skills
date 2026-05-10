@@ -101,7 +101,7 @@ The IIFE loads from the CDN and stays inert until it can attach to a visual edit
 
 On local/dev hosts, Budge auto-detects HMR-driven `class` and `style` mutations. When it sees a focused numeric visual property change, it marks the changed element, generates slides, and mounts the bar automatically. Add `data-budge-autodetect="true"` to force this outside local/dev, or `data-budge-autodetect="false"` to disable it.
 
-Budge also uses React Grab primitives for manual element selection. Hold `Cmd+Ctrl+A` on macOS or `Ctrl+Alt+A` elsewhere, select an element, and Budge appears with editable slides for that element. The shortcut intentionally avoids React Grab's default `Cmd/Ctrl+C` copy flow.
+Budge also uses React Grab primitives for manual element selection. Hold Space, select an element, and Budge appears with editable slides for that element. Because Budge only intercepts plain Space, React Grab's default shortcuts remain available.
 
 The explicit config element remains available as a fallback:
 
