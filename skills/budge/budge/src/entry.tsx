@@ -1,7 +1,6 @@
 import { createIsolet } from "isolet-js";
 import { react } from "isolet-js/react";
-import { init as initReactGrab } from "react-grab/core";
-import type { ReactGrabAPI } from "react-grab/core";
+import { getElementContext } from "react-grab/primitives";
 import { Budge, setAssetBase } from "./budge";
 import type { BudgeSlide } from "./budge";
 
@@ -29,7 +28,7 @@ export const widget = createIsolet({
 });
 
 type BudgeRuntimeConfig = { slides?: BudgeSlide[]; autoFocus?: boolean };
-type ReactGrabRuntimeState = ReturnType<ReactGrabAPI["getState"]>;
+type ReactGrabElementContext = Awaited<ReturnType<typeof getElementContext>>;
 
 const AUTO_DETECT_ATTR = "data-budge-autodetect";
 const BUDGE_TARGET_ATTR = "data-budge-target";
@@ -41,40 +40,18 @@ const REACT_GRAB_UI_SELECTOR = [
   "[data-react-grab-ignore]",
   "[data-react-grab-ignore-events]",
 ].join(",");
-const BUDGE_REACT_GRAB_PLUGIN_NAME = "budge-select";
 const BUDGE_HIGHLIGHT_BORDER = "#F59E0B";
 const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
-const REACT_GRAB_SUPPRESS_STYLE_ATTR = "data-budge-react-grab-suppress";
-const REACT_GRAB_DOCUMENT_SUPPRESS_CSS = `
-  canvas[data-react-grab-overlay-canvas] {
-    display: none !important;
-    opacity: 0 !important;
-  }
-
-  [data-react-grab-frozen] {
-    box-shadow: none !important;
-    filter: none !important;
-  }
-`;
-const REACT_GRAB_SHADOW_SUPPRESS_CSS = `
-  ${REACT_GRAB_DOCUMENT_SUPPRESS_CSS}
-
-  div[style*="box-shadow"][style*="inset"] {
-    box-shadow: none !important;
-    opacity: 0 !important;
-  }
-`;
 
 let explicitConfigFingerprint = "";
 let autoConfig: BudgeRuntimeConfig | null = null;
 let autoConfigFingerprint = "";
 let autoTarget: HTMLElement | null = null;
 let autoTargetHadMarker = false;
-let reactGrabApi: ReactGrabAPI | null = null;
-let reactGrabStarted = false;
-let reactGrabHighlightEl: HTMLDivElement | null = null;
-let reactGrabSuppressStyleEl: HTMLStyleElement | null = null;
-let reactGrabSuppressObserver: MutationObserver | null = null;
+let primitiveSelectionStarted = false;
+let primitiveSelectionActive = false;
+let primitiveSelectionTarget: HTMLElement | null = null;
+let primitiveHighlightEl: HTMLDivElement | null = null;
 
 function readConfig(): BudgeRuntimeConfig | null {
   const el = document.querySelector("[data-budge]");
@@ -190,56 +167,17 @@ function shouldIgnoreElement(el: Element) {
     el.closest(REACT_GRAB_UI_SELECTOR);
 }
 
-function removeReactGrabHighlight() {
-  reactGrabHighlightEl?.remove();
-  reactGrabHighlightEl = null;
+function removePrimitiveHighlight() {
+  primitiveHighlightEl?.remove();
+  primitiveHighlightEl = null;
 }
 
-function injectReactGrabSuppressStyle(root: Document | ShadowRoot) {
-  if (root.querySelector(`style[${REACT_GRAB_SUPPRESS_STYLE_ATTR}]`)) return;
-
-  const style = document.createElement("style");
-  style.setAttribute("data-budge-ui", "");
-  style.setAttribute(REACT_GRAB_SUPPRESS_STYLE_ATTR, "");
-  style.textContent = root instanceof Document
-    ? REACT_GRAB_DOCUMENT_SUPPRESS_CSS
-    : REACT_GRAB_SHADOW_SUPPRESS_CSS;
-
-  if (root instanceof Document) {
-    root.head.appendChild(style);
-  } else {
-    root.appendChild(style);
-  }
-}
-
-function injectReactGrabShadowSuppressStyles() {
-  for (const host of document.querySelectorAll<HTMLElement>("[data-react-grab]")) {
-    if (host.shadowRoot) injectReactGrabSuppressStyle(host.shadowRoot);
-  }
-}
-
-function ensureReactGrabSuppressStyles() {
-  injectReactGrabSuppressStyle(document);
-  reactGrabSuppressStyleEl = document.querySelector(
-    `style[${REACT_GRAB_SUPPRESS_STYLE_ATTR}]`,
-  );
-  injectReactGrabShadowSuppressStyles();
-
-  if (!reactGrabSuppressObserver) {
-    reactGrabSuppressObserver = new MutationObserver(injectReactGrabShadowSuppressStyles);
-    reactGrabSuppressObserver.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-    });
-  }
-}
-
-function getReactGrabHighlight() {
-  if (reactGrabHighlightEl?.isConnected) return reactGrabHighlightEl;
+function getPrimitiveHighlight() {
+  if (primitiveHighlightEl?.isConnected) return primitiveHighlightEl;
 
   const el = document.createElement("div");
   el.setAttribute("data-budge-ui", "");
-  el.setAttribute("data-budge-react-grab-highlight", "");
+  el.setAttribute("data-budge-primitive-highlight", "");
   el.style.cssText = [
     "position:fixed",
     "pointer-events:none",
@@ -251,23 +189,23 @@ function getReactGrabHighlight() {
     "transition:left 80ms ease,top 80ms ease,width 80ms ease,height 80ms ease,opacity 80ms ease",
   ].join(";");
   document.body.appendChild(el);
-  reactGrabHighlightEl = el;
+  primitiveHighlightEl = el;
   return el;
 }
 
-function updateReactGrabHighlightForElement(element: Element | null) {
+function updatePrimitiveHighlight(element: Element | null) {
   if (!element || shouldIgnoreElement(element)) {
-    removeReactGrabHighlight();
+    removePrimitiveHighlight();
     return;
   }
 
   const bounds = element.getBoundingClientRect();
   if (bounds.width <= 0 || bounds.height <= 0) {
-    removeReactGrabHighlight();
+    removePrimitiveHighlight();
     return;
   }
 
-  const el = getReactGrabHighlight();
+  const el = getPrimitiveHighlight();
   const computed = getComputedStyle(element);
   el.style.left = `${bounds.left}px`;
   el.style.top = `${bounds.top}px`;
@@ -276,13 +214,6 @@ function updateReactGrabHighlightForElement(element: Element | null) {
   el.style.borderRadius = computed.borderRadius || "6px";
   el.style.transform = "";
   el.style.opacity = "1";
-}
-
-function updateReactGrabHighlightFromState(state: ReactGrabRuntimeState) {
-  const target = state.isActive && !state.isDragging && !state.isCopying
-    ? state.targetElement
-    : null;
-  updateReactGrabHighlightForElement(target);
 }
 
 function isRecentBudgePreview() {
@@ -607,25 +538,31 @@ function setAutoConfig(el: HTMLElement, slides: BudgeSlide[]) {
   attachSourceContext(el, autoConfigFingerprint);
 }
 
+function getSourceFrame(context: ReactGrabElementContext) {
+  return context.stack.find((frame) => frame.fileName && frame.lineNumber) ??
+    context.stack.find((frame) => frame.fileName) ??
+    null;
+}
+
 async function attachSourceContext(el: HTMLElement, fingerprint: string) {
-  const api = reactGrabApi ?? (window as any).__REACT_GRAB__;
-  if (!api?.getSource || !autoConfig?.slides) return;
+  if (!autoConfig?.slides) return;
 
   try {
-    const source = await api.getSource(el);
-    if (!source?.filePath || fingerprint !== autoConfigFingerprint || autoTarget !== el || !autoConfig?.slides) return;
+    const context = await getElementContext(el);
+    const source = getSourceFrame(context);
+    if (!source?.fileName || fingerprint !== autoConfigFingerprint || autoTarget !== el || !autoConfig?.slides) return;
     autoConfig = {
       ...autoConfig,
       slides: autoConfig.slides.map((slide) => ({
         ...slide,
-        file: source.filePath,
+        file: source.fileName,
         line: source.lineNumber ?? undefined,
       })),
     };
     autoConfigFingerprint = configFingerprint(autoConfig);
     sync();
   } catch {
-    // Source lookup is opportunistic; Budge still works without React Grab.
+    // Source lookup is opportunistic; Budge still works without React metadata.
   }
 }
 
@@ -635,52 +572,99 @@ function budgeActivationKey() {
   return isApple ? "Meta+Shift+B" : "Control+Shift+B";
 }
 
-function startReactGrabSelection() {
-  if (reactGrabStarted) return;
-  reactGrabStarted = true;
-  ensureReactGrabSuppressStyles();
+function isBudgeActivationEvent(event: KeyboardEvent) {
+  const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform || "");
+  const hasPlatformModifier = isApple ? event.metaKey : event.ctrlKey;
+  const isB = event.key.toLowerCase() === "b" || event.code === "KeyB";
+  return hasPlatformModifier && event.shiftKey && !event.altKey && isB;
+}
 
-  try {
-    const api = initReactGrab({
-      activationMode: "hold",
-      activationKey: budgeActivationKey(),
-      allowActivationInsideInput: false,
-      freezeReactUpdates: false,
-    });
+function getPrimitiveTargetAt(x: number, y: number) {
+  const el = document.elementFromPoint(x, y);
+  if (!(el instanceof HTMLElement)) return null;
+  if (shouldIgnoreElement(el)) return null;
+  return el;
+}
 
-    reactGrabApi = api;
-    api.registerPlugin({
-      name: BUDGE_REACT_GRAB_PLUGIN_NAME,
-      theme: {
-        selectionBox: { enabled: false },
-        dragBox: { enabled: false },
-        grabbedBoxes: { enabled: false },
-        elementLabel: { enabled: false },
-        toolbar: { enabled: false },
-      },
-      hooks: {
-        onDeactivate() {
-          removeReactGrabHighlight();
-        },
-        onStateChange(state) {
-          updateReactGrabHighlightFromState(state);
-        },
-        onElementSelect(element) {
-          if (!(element instanceof HTMLElement) || shouldIgnoreElement(element)) return true;
+function startPrimitiveSelection() {
+  if (primitiveSelectionActive) return;
+  primitiveSelectionActive = true;
+}
 
-          removeReactGrabHighlight();
-          const slides = buildSelectionSlides(element);
-          if (slides.length > 0) {
-            setAutoConfig(element, slides);
-          }
-          api.deactivate();
-          return true;
-        },
-      },
-    });
-  } catch {
-    reactGrabApi = null;
+function stopPrimitiveSelection() {
+  primitiveSelectionActive = false;
+  primitiveSelectionTarget = null;
+  removePrimitiveHighlight();
+}
+
+function updatePrimitiveSelectionTarget(x: number, y: number) {
+  if (!primitiveSelectionActive) return;
+  primitiveSelectionTarget = getPrimitiveTargetAt(x, y);
+  updatePrimitiveHighlight(primitiveSelectionTarget);
+}
+
+function selectPrimitiveTarget(target: HTMLElement | null) {
+  if (!target) return;
+
+  const slides = buildSelectionSlides(target);
+  stopPrimitiveSelection();
+  if (slides.length > 0) {
+    setAutoConfig(target, slides);
   }
+}
+
+function startPrimitiveSelectionRuntime() {
+  if (primitiveSelectionStarted) return;
+  primitiveSelectionStarted = true;
+
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (!isBudgeActivationEvent(event)) {
+        if (primitiveSelectionActive && event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          stopPrimitiveSelection();
+        }
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      startPrimitiveSelection();
+    },
+    { capture: true },
+  );
+
+  window.addEventListener(
+    "keyup",
+    (event) => {
+      if (!primitiveSelectionActive) return;
+      if (isBudgeActivationEvent(event) || event.key === "Meta" || event.key === "Control" || event.key === "Shift") {
+        stopPrimitiveSelection();
+      }
+    },
+    { capture: true },
+  );
+
+  window.addEventListener(
+    "pointermove",
+    (event) => {
+      updatePrimitiveSelectionTarget(event.clientX, event.clientY);
+    },
+    { capture: true, passive: true },
+  );
+
+  window.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!primitiveSelectionActive || event.button !== 0 || !event.isPrimary) return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectPrimitiveTarget(primitiveSelectionTarget ?? getPrimitiveTargetAt(event.clientX, event.clientY));
+    },
+    { capture: true },
+  );
 }
 
 function rememberSubtree(root: Element) {
@@ -756,7 +740,7 @@ if (typeof document !== "undefined") {
   const init = () => {
     sync();
     startAutoDetect();
-    startReactGrabSelection();
+    startPrimitiveSelectionRuntime();
 
     const observer = new MutationObserver(sync);
     observer.observe(document.documentElement, {
