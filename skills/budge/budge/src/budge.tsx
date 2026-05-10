@@ -488,7 +488,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     for (const property of propertiesForSlide(cs.property)) {
       el.style.setProperty(property, nextValue);
     }
-  }, [value, slide, SLIDES]);
+  }, [slide, SLIDES]);
 
   const goToSlide = useCallback((direction: number) => {
     const N = SLIDES.length;
