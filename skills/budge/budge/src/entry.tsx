@@ -44,6 +44,23 @@ const REACT_GRAB_UI_SELECTOR = [
 const BUDGE_REACT_GRAB_PLUGIN_NAME = "budge-select";
 const BUDGE_HIGHLIGHT_BORDER = "#F59E0B";
 const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
+const REACT_GRAB_SUPPRESS_STYLE_ATTR = "data-budge-react-grab-suppress";
+const REACT_GRAB_SUPPRESS_CSS = `
+  canvas[data-react-grab-overlay-canvas] {
+    display: none !important;
+    opacity: 0 !important;
+  }
+
+  div[style*="box-shadow"][style*="inset"] {
+    box-shadow: none !important;
+    opacity: 0 !important;
+  }
+
+  [data-react-grab-frozen] {
+    box-shadow: none !important;
+    filter: none !important;
+  }
+`;
 
 let explicitConfigFingerprint = "";
 let autoConfig: BudgeRuntimeConfig | null = null;
@@ -54,6 +71,7 @@ let reactGrabApi: ReactGrabAPI | null = null;
 let reactGrabStarted = false;
 let reactGrabHighlightEl: HTMLDivElement | null = null;
 let reactGrabSuppressStyleEl: HTMLStyleElement | null = null;
+let reactGrabSuppressObserver: MutationObserver | null = null;
 
 function readConfig(): BudgeRuntimeConfig | null {
   const el = document.querySelector("[data-budge]");
@@ -174,25 +192,41 @@ function removeReactGrabHighlight() {
   reactGrabHighlightEl = null;
 }
 
-function ensureReactGrabSuppressStyles() {
-  if (reactGrabSuppressStyleEl?.isConnected) return;
+function injectReactGrabSuppressStyle(root: Document | ShadowRoot) {
+  if (root.querySelector(`style[${REACT_GRAB_SUPPRESS_STYLE_ATTR}]`)) return;
 
   const style = document.createElement("style");
   style.setAttribute("data-budge-ui", "");
-  style.setAttribute("data-budge-react-grab-suppress", "");
-  style.textContent = `
-    canvas[data-react-grab-overlay-canvas] {
-      display: none !important;
-      opacity: 0 !important;
-    }
+  style.setAttribute(REACT_GRAB_SUPPRESS_STYLE_ATTR, "");
+  style.textContent = REACT_GRAB_SUPPRESS_CSS;
 
-    [data-react-grab-frozen] {
-      box-shadow: none !important;
-      filter: none !important;
-    }
-  `;
-  document.head.appendChild(style);
-  reactGrabSuppressStyleEl = style;
+  if (root instanceof Document) {
+    root.head.appendChild(style);
+  } else {
+    root.appendChild(style);
+  }
+}
+
+function injectReactGrabShadowSuppressStyles() {
+  for (const host of document.querySelectorAll<HTMLElement>("[data-react-grab]")) {
+    if (host.shadowRoot) injectReactGrabSuppressStyle(host.shadowRoot);
+  }
+}
+
+function ensureReactGrabSuppressStyles() {
+  injectReactGrabSuppressStyle(document);
+  reactGrabSuppressStyleEl = document.querySelector(
+    `style[${REACT_GRAB_SUPPRESS_STYLE_ATTR}]`,
+  );
+  injectReactGrabShadowSuppressStyles();
+
+  if (!reactGrabSuppressObserver) {
+    reactGrabSuppressObserver = new MutationObserver(injectReactGrabShadowSuppressStyles);
+    reactGrabSuppressObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+  }
 }
 
 function getReactGrabHighlight() {

@@ -407,8 +407,8 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
   const holdIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const holdTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const discoveredRef = useRef<TokenBuckets>(EMPTY_BUCKETS);
-  const [snapEnabled, setSnapEnabled] = useState(true);
-  const snapEnabledRef = useRef(true);
+  const [snapEnabled, setSnapEnabled] = useState(false);
+  const snapEnabledRef = useRef(false);
   const [toastLabel, setToastLabel] = useState<string | null>(null);
   const toastLabelTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 

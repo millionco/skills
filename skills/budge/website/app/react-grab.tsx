@@ -7,6 +7,23 @@ type ReactGrabRuntimeState = ReturnType<ReactGrabAPI["getState"]>;
 
 const BUDGE_HIGHLIGHT_BORDER = "#F59E0B";
 const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
+const REACT_GRAB_SUPPRESS_STYLE_ATTR = "data-budge-react-grab-suppress";
+const REACT_GRAB_SUPPRESS_CSS = `
+  canvas[data-react-grab-overlay-canvas] {
+    display: none !important;
+    opacity: 0 !important;
+  }
+
+  div[style*="box-shadow"][style*="inset"] {
+    box-shadow: none !important;
+    opacity: 0 !important;
+  }
+
+  [data-react-grab-frozen] {
+    box-shadow: none !important;
+    filter: none !important;
+  }
+`;
 
 function budgeActivationKey() {
   const platform = navigator.platform || "";
@@ -32,30 +49,40 @@ function createHighlight() {
   return el;
 }
 
-function createSuppressStyle() {
+function injectSuppressStyle(root: Document | ShadowRoot) {
+  if (root.querySelector(`style[${REACT_GRAB_SUPPRESS_STYLE_ATTR}]`)) return null;
+
   const style = document.createElement("style");
   style.setAttribute("data-budge-ui", "");
-  style.setAttribute("data-budge-react-grab-suppress", "");
-  style.textContent = `
-    canvas[data-react-grab-overlay-canvas] {
-      display: none !important;
-      opacity: 0 !important;
-    }
+  style.setAttribute(REACT_GRAB_SUPPRESS_STYLE_ATTR, "");
+  style.textContent = REACT_GRAB_SUPPRESS_CSS;
 
-    [data-react-grab-frozen] {
-      box-shadow: none !important;
-      filter: none !important;
-    }
-  `;
-  document.head.appendChild(style);
+  if (root instanceof Document) {
+    root.head.appendChild(style);
+  } else {
+    root.appendChild(style);
+  }
+
   return style;
+}
+
+function injectShadowSuppressStyles() {
+  for (const host of document.querySelectorAll<HTMLElement>("[data-react-grab]")) {
+    if (host.shadowRoot) injectSuppressStyle(host.shadowRoot);
+  }
 }
 
 export function ReactGrab() {
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return;
     let highlightEl: HTMLDivElement | null = null;
-    const suppressStyle = createSuppressStyle();
+    const suppressStyle = injectSuppressStyle(document);
+    injectShadowSuppressStyles();
+    const suppressObserver = new MutationObserver(injectShadowSuppressStyles);
+    suppressObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
 
     const removeHighlight = () => {
       highlightEl?.remove();
@@ -115,7 +142,8 @@ export function ReactGrab() {
 
     return () => {
       removeHighlight();
-      suppressStyle.remove();
+      suppressStyle?.remove();
+      suppressObserver.disconnect();
     };
   }, []);
 
