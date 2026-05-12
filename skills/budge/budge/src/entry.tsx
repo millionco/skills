@@ -598,43 +598,14 @@ async function attachSourceContext(el: HTMLElement, fingerprint: string) {
   }
 }
 
-function isEditableTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName.toLowerCase();
-  return target.isContentEditable ||
-    tag === "input" ||
-    tag === "textarea" ||
-    tag === "select";
-}
-
-function isInteractiveTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  if (isEditableTarget(target)) return true;
-  return !!target.closest([
-    "a[href]",
-    "button",
-    "summary",
-    "[role='button']",
-    "[role='link']",
-    "[role='checkbox']",
-    "[role='radio']",
-    "[role='switch']",
-    "[role='tab']",
-    "[role='menuitem']",
-    "[role='option']",
-    "[aria-controls]",
-    "[aria-expanded]",
-  ].join(","));
-}
-
 function isBudgeActivationEvent(event: KeyboardEvent) {
-  return (event.key === " " || event.code === "Space") &&
-    !event.metaKey &&
+  const key = event.key.toLowerCase();
+  return (key === "s" || event.code === "KeyS") &&
+    event.metaKey &&
     !event.ctrlKey &&
     !event.altKey &&
-    !event.shiftKey &&
-    !isFromBudgeUi(event.target) &&
-    !isInteractiveTarget(event.target);
+    event.shiftKey &&
+    !isFromBudgeUi(event.target);
 }
 
 function withReactGrabFreezeSuspended<T>(read: () => T): T {
@@ -737,17 +708,6 @@ function startPrimitiveSelectionRuntime() {
       event.preventDefault();
       event.stopPropagation();
       startPrimitiveSelection();
-    },
-    { capture: true },
-  );
-
-  window.addEventListener(
-    "keyup",
-    (event) => {
-      if (!primitiveSelectionActive) return;
-      if (event.key === " " || event.code === "Space") {
-        stopPrimitiveSelection();
-      }
     },
     { capture: true },
   );

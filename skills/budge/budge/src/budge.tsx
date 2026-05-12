@@ -545,7 +545,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     if (soundOn) playTabSwitch();
 
     containerRef.current?.focus();
-  }, [soundOn]);
+  }, [slidesKey, soundOn]);
 
 
   const applyDigitBufferRef = useRef(() => {});
@@ -591,7 +591,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
       if (cycled) playSwoosh();
       else playTick(held, direction > 0);
     }
-  }, [f.shiftStep, soundOn]);
+  }, [f.shiftStep, slidesKey, soundOn]);
 
   const triggerBudge = useCallback(
     (dir: "up" | "down") => {
@@ -639,7 +639,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     budgeTimeoutRef.current = setTimeout(() => setIsBudging(false), 600);
     if (f.buttonFeedback) setTimeout(() => setPressedButton(null), 70);
     if (soundOn) playUndo();
-  }, [f.buttonFeedback, soundOn]);
+  }, [f.buttonFeedback, slidesKey, soundOn]);
 
   const copy = useCallback(() => {
     slideValuesRef.current[slideRef.current] = valueRef.current;
@@ -682,7 +682,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     }, 800);
     if (f.buttonFeedback) setTimeout(() => setPressedButton(null), 70);
     if (soundOn) playConfirm();
-  }, [f.buttonFeedback, soundOn]);
+  }, [f.buttonFeedback, slidesKey, soundOn]);
 
   const stepRef = useRef(step);
   stepRef.current = step;
