@@ -59,6 +59,7 @@ let primitiveSelectionFreezeActive = false;
 let primitiveSelectionTarget: HTMLElement | null = null;
 let primitiveSelectionPath: HTMLElement[] = [];
 let primitiveSelectionPathIndex = 0;
+let primitiveSelectionPointer: { x: number; y: number } | null = null;
 let primitiveHighlightEl: HTMLDivElement | null = null;
 let suppressPrimitiveClick = false;
 let suppressPrimitiveClickTimer: number | null = null;
@@ -724,6 +725,11 @@ function getPrimitiveTargetAt(x: number, y: number) {
   return el;
 }
 
+function getPrimitiveElementsAt(x: number, y: number) {
+  return withReactGrabFreezeSuspended(() => document.elementsFromPoint(x, y))
+    .filter((el): el is HTMLElement => el instanceof HTMLElement && !shouldIgnoreElement(el));
+}
+
 function getPrimitiveSelectionPath(target: HTMLElement | null) {
   const path: HTMLElement[] = [];
   let current: HTMLElement | null = target;
@@ -734,6 +740,30 @@ function getPrimitiveSelectionPath(target: HTMLElement | null) {
   }
 
   return path;
+}
+
+function getFirstSelectableDescendant(target: HTMLElement) {
+  for (const el of target.querySelectorAll("*")) {
+    if (el instanceof HTMLElement && !shouldIgnoreElement(el)) return el;
+  }
+  return null;
+}
+
+function getPrimitiveDescendantTarget(target: HTMLElement | null) {
+  if (!target) return null;
+
+  if (primitiveSelectionPointer) {
+    const stack = getPrimitiveElementsAt(primitiveSelectionPointer.x, primitiveSelectionPointer.y);
+    const currentIndex = stack.indexOf(target);
+    if (currentIndex > 0) {
+      for (let i = currentIndex - 1; i >= 0; i--) {
+        const candidate = stack[i];
+        if (target.contains(candidate)) return candidate;
+      }
+    }
+  }
+
+  return getFirstSelectableDescendant(target);
 }
 
 function startPrimitiveFreeze() {
@@ -780,12 +810,14 @@ function stopPrimitiveSelection() {
   primitiveSelectionTarget = null;
   primitiveSelectionPath = [];
   primitiveSelectionPathIndex = 0;
+  primitiveSelectionPointer = null;
   removePrimitiveHighlight();
   stopPrimitiveFreeze();
 }
 
 function updatePrimitiveSelectionTarget(x: number, y: number) {
   if (!primitiveSelectionActive) return;
+  primitiveSelectionPointer = { x, y };
   primitiveSelectionPath = getPrimitiveSelectionPath(getPrimitiveTargetAt(x, y));
   primitiveSelectionPathIndex = 0;
   primitiveSelectionTarget = primitiveSelectionPath[primitiveSelectionPathIndex] ?? null;
@@ -798,7 +830,16 @@ function refinePrimitiveSelection(direction: number) {
     0,
     Math.min(primitiveSelectionPath.length - 1, primitiveSelectionPathIndex + direction),
   );
-  if (next === primitiveSelectionPathIndex) return;
+  if (next === primitiveSelectionPathIndex) {
+    if (direction >= 0) return;
+    const descendant = getPrimitiveDescendantTarget(primitiveSelectionTarget);
+    if (!descendant) return;
+    primitiveSelectionPath = getPrimitiveSelectionPath(descendant);
+    primitiveSelectionPathIndex = 0;
+    primitiveSelectionTarget = primitiveSelectionPath[primitiveSelectionPathIndex] ?? descendant;
+    updatePrimitiveHighlight(primitiveSelectionTarget);
+    return;
+  }
   primitiveSelectionPathIndex = next;
   primitiveSelectionTarget = primitiveSelectionPath[primitiveSelectionPathIndex] ?? null;
   updatePrimitiveHighlight(primitiveSelectionTarget);
