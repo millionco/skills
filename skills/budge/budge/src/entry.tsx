@@ -699,11 +699,11 @@ async function attachSourceContext(el: HTMLElement, fingerprint: string) {
 
 function isBudgeActivationEvent(event: KeyboardEvent) {
   const key = event.key.toLowerCase();
-  return (key === "1" || event.code === "Digit1") &&
+  return (key === "e" || event.code === "KeyE") &&
     event.metaKey &&
     !event.ctrlKey &&
     !event.altKey &&
-    event.shiftKey &&
+    !event.shiftKey &&
     !isFromBudgeUi(event.target);
 }
 

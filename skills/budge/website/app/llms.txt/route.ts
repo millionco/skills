@@ -35,7 +35,7 @@ Install the skill, then type \`/budge\` to invoke it. Ask your agent to make a v
 
 ## Runtime
 
-budge is a self-contained IIFE loaded from \`https://budge.design/budge.iife.js\` via \`next/script\`. On local/dev hosts, it watches HMR-driven \`class\` and \`style\` mutations, infers the latest numeric visual property change, and mounts automatically. It also uses React Grab primitives for manual selection: press \`Cmd+Shift+1\`, select an element, and budge opens. It also supports a \`data-budge\` config element as a fallback. It handles live preview on \`[data-budge-target]\` elements, arrow key stepping, slide navigation, audio feedback, submit, and cancel entirely client-side.
+budge is a self-contained IIFE loaded from \`https://budge.design/budge.iife.js\` via \`next/script\`. On local/dev hosts, it watches HMR-driven \`class\` and \`style\` mutations, infers the latest numeric visual property change, and mounts automatically. It also uses React Grab primitives for manual selection: press \`Cmd+E\`, select an element, and budge opens. It also supports a \`data-budge\` config element as a fallback. It handles live preview on \`[data-budge-target]\` elements, arrow key stepping, slide navigation, audio feedback, submit, and cancel entirely client-side.
 
 ## Slide configuration
 
