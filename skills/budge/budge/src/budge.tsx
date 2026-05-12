@@ -188,6 +188,10 @@ function wrapValue(v: number, min: number, max: number): number {
   return min + offset;
 }
 
+function slideValueChanged(slide: BudgeSlide, value: number) {
+  return Math.abs(value - slide.original) > 0.001;
+}
+
 const DEFAULT_SLIDES: BudgeSlide[] = [
   { label: "font size", property: "font-size", min: 32, max: 86, value: 61, original: 61, unit: "px" },
   { label: "opacity", property: "opacity", min: 0, max: 100, value: 100, original: 100, unit: "%" },
@@ -644,16 +648,24 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
   const copy = useCallback(() => {
     slideValuesRef.current[slideRef.current] = valueRef.current;
 
-    const assignments = SLIDES.map((slide, idx) => ({
-      property: slide.property,
-      value: formatSlideValue(
-        slide,
-        slideValuesRef.current[idx] ?? slide.value,
-        snapEnabledRef.current,
-        discoveredRef.current,
-      ),
-      location: slideLocation(slide),
-    }));
+    const allAssignments = SLIDES.map((slide, idx) => {
+      const value = slideValuesRef.current[idx] ?? slide.value;
+      return {
+        property: slide.property,
+        value: formatSlideValue(
+          slide,
+          value,
+          snapEnabledRef.current,
+          discoveredRef.current,
+        ),
+        location: slideLocation(slide),
+        changed: slideValueChanged(slide, value),
+      };
+    });
+    const changedAssignments = allAssignments.filter((assignment) => assignment.changed);
+    const assignments = changedAssignments.length > 0
+      ? changedAssignments
+      : allAssignments.slice(slideRef.current, slideRef.current + 1);
     const sharedLocation = assignments.every(
       (assignment) => assignment.location === assignments[0]?.location,
     )

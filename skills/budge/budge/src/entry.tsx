@@ -44,7 +44,7 @@ const REACT_GRAB_FREEZE_STYLE_SELECTOR = "style[data-react-grab-frozen-pseudo]";
 const BUDGE_HIGHLIGHT_BORDER = "#F59E0B";
 const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
 const USER_INTERACTION_SUPPRESSION_MS = 1200;
-const MAX_SELECTION_SLIDES = 16;
+const MAX_SELECTION_SLIDES = 40;
 
 let explicitConfigFingerprint = "";
 let autoConfig: BudgeRuntimeConfig | null = null;
@@ -143,6 +143,9 @@ const TRACKED_PROPERTIES = [
   "border-bottom-right-radius",
   "border-bottom-left-radius",
   "border-width",
+  "color",
+  "background-color",
+  "border-color",
   "opacity",
   "width",
   "height",
@@ -262,6 +265,41 @@ function parseNumeric(value: string): NumericValue | null {
   if (raw.endsWith("em")) return { value: numeric * 16, unit: "px" };
   if (raw.endsWith("px")) return { value: numeric, unit: "px" };
   return { value: numeric, unit: "" };
+}
+
+function parseColorHue(value: string): NumericValue | null {
+  const raw = value.trim();
+  if (!raw || raw === "transparent") return null;
+
+  const match = raw.match(/^rgba?\((.*)\)$/i);
+  if (!match) return null;
+
+  const parts = match[1].match(/-?\d*\.?\d+%?/g);
+  if (!parts || parts.length < 3) return null;
+  if (parts.length >= 4) {
+    const alpha = Number.parseFloat(parts[3]);
+    if (alpha === 0) return null;
+  }
+
+  const toRgbChannel = (part: string) => {
+    const value = Number.parseFloat(part);
+    return part.endsWith("%") ? value * 2.55 : value;
+  };
+
+  const r = toRgbChannel(parts[0]) / 255;
+  const g = toRgbChannel(parts[1]) / 255;
+  const b = toRgbChannel(parts[2]) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta === 0) return { value: 0, unit: "°" };
+
+  let hue = 0;
+  if (max === r) hue = ((g - b) / delta) % 6;
+  else if (max === g) hue = (b - r) / delta + 2;
+  else hue = (r - g) / delta + 4;
+
+  return { value: Math.round(((hue * 60) + 360) % 360), unit: "°" };
 }
 
 function valuesChanged(before: NumericValue, after: NumericValue) {
@@ -476,6 +514,22 @@ function numericValue(snapshot: StyleSnapshot, property: TrackedProperty) {
   return parseNumeric(snapshot[property]);
 }
 
+function selectionNumericValue(snapshot: StyleSnapshot, property: TrackedProperty) {
+  const value = numericValue(snapshot, property);
+  if (value) return value;
+
+  if (property === "line-height") {
+    const fontSize = numericValue(snapshot, "font-size");
+    return fontSize ? { value: Math.round(fontSize.value * 1.2 * 100) / 100, unit: fontSize.unit || "px" } : null;
+  }
+
+  if (property === "letter-spacing" || property === "gap" || property === "row-gap" || property === "column-gap") {
+    return { value: 0, unit: "px" };
+  }
+
+  return null;
+}
+
 function buildSelectionSlides(el: HTMLElement): BudgeSlide[] {
   const snapshot = snapshotElement(el);
   const slides: BudgeSlide[] = [];
@@ -484,6 +538,23 @@ function buildSelectionSlides(el: HTMLElement): BudgeSlide[] {
   const pushSlide = (property: string, label: string, value: NumericValue | null) => {
     if (!value || seen.has(property) || slides.length >= MAX_SELECTION_SLIDES) return;
     slides.push(buildSlide(property, label, value, value));
+    seen.add(property);
+  };
+
+  const pushColorSlide = (property: TrackedProperty, label: string) => {
+    if (seen.has(property) || slides.length >= MAX_SELECTION_SLIDES) return;
+    const value = parseColorHue(snapshot[property]);
+    if (!value) return;
+    slides.push({
+      label,
+      property,
+      min: 0,
+      max: 360,
+      value: value.value,
+      original: value.value,
+      unit: value.unit,
+      type: "color",
+    });
     seen.add(property);
   };
 
@@ -504,14 +575,10 @@ function buildSelectionSlides(el: HTMLElement): BudgeSlide[] {
     pushSlide(`${property}-top,${property}-bottom`, `${label}-y`, block);
     pushSlide(`${property}-left,${property}-right`, `${label}-x`, inline);
 
-    if (!block) {
-      pushSlide(`${property}-top`, `${label} top`, numericValue(snapshot, blockProperties[0]));
-      pushSlide(`${property}-bottom`, `${label} bottom`, numericValue(snapshot, blockProperties[1]));
-    }
-    if (!inline) {
-      pushSlide(`${property}-left`, `${label} left`, numericValue(snapshot, inlineProperties[0]));
-      pushSlide(`${property}-right`, `${label} right`, numericValue(snapshot, inlineProperties[1]));
-    }
+    pushSlide(`${property}-top`, `${label} top`, numericValue(snapshot, blockProperties[0]));
+    pushSlide(`${property}-bottom`, `${label} bottom`, numericValue(snapshot, blockProperties[1]));
+    pushSlide(`${property}-left`, `${label} left`, numericValue(snapshot, inlineProperties[0]));
+    pushSlide(`${property}-right`, `${label} right`, numericValue(snapshot, inlineProperties[1]));
   };
 
   pushBoxGroup(
@@ -530,18 +597,18 @@ function buildSelectionSlides(el: HTMLElement): BudgeSlide[] {
     ["margin-left", "margin-right"],
   );
 
-  pushSlide("gap", "gap", numericValue(snapshot, "gap"));
-  const rowGap = numericValue(snapshot, "row-gap");
-  const columnGap = numericValue(snapshot, "column-gap");
-  const gap = numericValue(snapshot, "gap");
-  if (!gap || !rowGap || !columnGap || !sameNumericValue(rowGap, columnGap)) {
-    pushSlide("row-gap", "row gap", rowGap);
-    pushSlide("column-gap", "column gap", columnGap);
-  }
+  pushSlide("gap", "gap", selectionNumericValue(snapshot, "gap"));
+  const rowGap = selectionNumericValue(snapshot, "row-gap");
+  const columnGap = selectionNumericValue(snapshot, "column-gap");
+  pushSlide("row-gap", "row gap", rowGap);
+  pushSlide("column-gap", "column gap", columnGap);
 
   pushSlide("font-size", "font size", numericValue(snapshot, "font-size"));
-  pushSlide("line-height", "line height", numericValue(snapshot, "line-height"));
-  pushSlide("letter-spacing", "letter spacing", numericValue(snapshot, "letter-spacing"));
+  pushSlide("line-height", "line height", selectionNumericValue(snapshot, "line-height"));
+  pushSlide("letter-spacing", "letter spacing", selectionNumericValue(snapshot, "letter-spacing"));
+  pushColorSlide("color", "text color");
+  pushColorSlide("background-color", "background color");
+  pushColorSlide("border-color", "border color");
 
   const radius = alignedValue(snapshot, [
     "border-top-left-radius",
@@ -550,6 +617,10 @@ function buildSelectionSlides(el: HTMLElement): BudgeSlide[] {
     "border-bottom-left-radius",
   ]);
   pushSlide("border-radius", "border radius", radius);
+  pushSlide("border-top-left-radius", "top left radius", numericValue(snapshot, "border-top-left-radius"));
+  pushSlide("border-top-right-radius", "top right radius", numericValue(snapshot, "border-top-right-radius"));
+  pushSlide("border-bottom-right-radius", "bottom right radius", numericValue(snapshot, "border-bottom-right-radius"));
+  pushSlide("border-bottom-left-radius", "bottom left radius", numericValue(snapshot, "border-bottom-left-radius"));
   pushSlide("border-width", "border width", numericValue(snapshot, "border-width"));
 
   pushSlide("width", "width", numericValue(snapshot, "width"));
