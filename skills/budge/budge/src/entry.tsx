@@ -692,7 +692,7 @@ async function attachSourceContext(el: HTMLElement, fingerprint: string) {
 
 function isBudgeActivationEvent(event: KeyboardEvent) {
   const key = event.key.toLowerCase();
-  return (key === "s" || event.code === "KeyS") &&
+  return (key === "1" || event.code === "Digit1") &&
     event.metaKey &&
     !event.ctrlKey &&
     !event.altKey &&
