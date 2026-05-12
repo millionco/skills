@@ -1,6 +1,6 @@
 import { createIsolet } from "isolet-js";
 import { react } from "isolet-js/react";
-import { getElementContext } from "react-grab/primitives";
+import { freeze, getElementContext, isFreezeActive, unfreeze } from "react-grab/primitives";
 import { Budge, setAssetBase } from "./budge";
 import type { BudgeSlide } from "./budge";
 
@@ -40,6 +40,7 @@ const REACT_GRAB_UI_SELECTOR = [
   "[data-react-grab-ignore]",
   "[data-react-grab-ignore-events]",
 ].join(",");
+const REACT_GRAB_FREEZE_STYLE_SELECTOR = "style[data-react-grab-frozen-pseudo]";
 const BUDGE_HIGHLIGHT_BORDER = "#F59E0B";
 const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
 
@@ -50,8 +51,11 @@ let autoTarget: HTMLElement | null = null;
 let autoTargetHadMarker = false;
 let primitiveSelectionStarted = false;
 let primitiveSelectionActive = false;
+let primitiveSelectionFreezeActive = false;
 let primitiveSelectionTarget: HTMLElement | null = null;
 let primitiveHighlightEl: HTMLDivElement | null = null;
+let suppressPrimitiveClick = false;
+let suppressPrimitiveClickTimer: number | null = null;
 
 function readConfig(): BudgeRuntimeConfig | null {
   const el = document.querySelector("[data-budge]");
@@ -584,22 +588,68 @@ function isBudgeActivationEvent(event: KeyboardEvent) {
     !isEditableTarget(event.target);
 }
 
+function withReactGrabFreezeSuspended<T>(read: () => T): T {
+  const style = document.querySelector<HTMLStyleElement>(REACT_GRAB_FREEZE_STYLE_SELECTOR);
+  const wasDisabled = style?.disabled ?? false;
+  if (style) style.disabled = true;
+  try {
+    return read();
+  } finally {
+    if (style) style.disabled = wasDisabled;
+  }
+}
+
 function getPrimitiveTargetAt(x: number, y: number) {
-  const el = document.elementFromPoint(x, y);
+  const el = withReactGrabFreezeSuspended(() => document.elementFromPoint(x, y));
   if (!(el instanceof HTMLElement)) return null;
   if (shouldIgnoreElement(el)) return null;
   return el;
 }
 
+function startPrimitiveFreeze() {
+  if (primitiveSelectionFreezeActive || isFreezeActive()) return;
+  freeze();
+  primitiveSelectionFreezeActive = true;
+}
+
+function stopPrimitiveFreeze() {
+  if (!primitiveSelectionFreezeActive) return;
+  primitiveSelectionFreezeActive = false;
+  unfreeze();
+}
+
+function clearPrimitiveClickSuppression() {
+  suppressPrimitiveClick = false;
+  if (suppressPrimitiveClickTimer !== null) {
+    window.clearTimeout(suppressPrimitiveClickTimer);
+    suppressPrimitiveClickTimer = null;
+  }
+}
+
+function suppressNextPrimitiveClick() {
+  suppressPrimitiveClick = true;
+  if (suppressPrimitiveClickTimer !== null) {
+    window.clearTimeout(suppressPrimitiveClickTimer);
+  }
+  suppressPrimitiveClickTimer = window.setTimeout(clearPrimitiveClickSuppression, 600);
+}
+
+function blockPrimitiveEvent(event: Event) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+
 function startPrimitiveSelection() {
   if (primitiveSelectionActive) return;
   primitiveSelectionActive = true;
+  startPrimitiveFreeze();
 }
 
 function stopPrimitiveSelection() {
   primitiveSelectionActive = false;
   primitiveSelectionTarget = null;
   removePrimitiveHighlight();
+  stopPrimitiveFreeze();
 }
 
 function updatePrimitiveSelectionTarget(x: number, y: number) {
@@ -666,9 +716,37 @@ function startPrimitiveSelectionRuntime() {
     "pointerdown",
     (event) => {
       if (!primitiveSelectionActive || event.button !== 0 || !event.isPrimary) return;
-      event.preventDefault();
-      event.stopPropagation();
+      suppressNextPrimitiveClick();
+      blockPrimitiveEvent(event);
       selectPrimitiveTarget(primitiveSelectionTarget ?? getPrimitiveTargetAt(event.clientX, event.clientY));
+    },
+    { capture: true },
+  );
+
+  window.addEventListener(
+    "pointerup",
+    (event) => {
+      if (!suppressPrimitiveClick) return;
+      blockPrimitiveEvent(event);
+    },
+    { capture: true },
+  );
+
+  window.addEventListener(
+    "mouseup",
+    (event) => {
+      if (!suppressPrimitiveClick) return;
+      blockPrimitiveEvent(event);
+    },
+    { capture: true },
+  );
+
+  window.addEventListener(
+    "click",
+    (event) => {
+      if (!primitiveSelectionActive && !suppressPrimitiveClick) return;
+      blockPrimitiveEvent(event);
+      clearPrimitiveClickSuppression();
     },
     { capture: true },
   );
