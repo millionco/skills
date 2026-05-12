@@ -43,6 +43,7 @@ const REACT_GRAB_UI_SELECTOR = [
 const REACT_GRAB_FREEZE_STYLE_SELECTOR = "style[data-react-grab-frozen-pseudo]";
 const BUDGE_HIGHLIGHT_BORDER = "#F59E0B";
 const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
+const USER_INTERACTION_SUPPRESSION_MS = 1200;
 
 let explicitConfigFingerprint = "";
 let autoConfig: BudgeRuntimeConfig | null = null;
@@ -56,6 +57,7 @@ let primitiveSelectionTarget: HTMLElement | null = null;
 let primitiveHighlightEl: HTMLDivElement | null = null;
 let suppressPrimitiveClick = false;
 let suppressPrimitiveClickTimer: number | null = null;
+let lastPageInteractionAt = -Infinity;
 
 function readConfig(): BudgeRuntimeConfig | null {
   const el = document.querySelector("[data-budge]");
@@ -169,6 +171,19 @@ function shouldIgnoreElement(el: Element) {
     el.closest(BUDGE_UI_SELECTOR) ||
     el.closest(BUDGE_CONFIG_SELECTOR) ||
     el.closest(REACT_GRAB_UI_SELECTOR);
+}
+
+function isFromBudgeUi(target: EventTarget | null) {
+  return target instanceof Element && !!target.closest(BUDGE_UI_SELECTOR);
+}
+
+function notePageInteraction(event: Event) {
+  if (isFromBudgeUi(event.target)) return;
+  lastPageInteractionAt = performance.now();
+}
+
+function isRecentPageInteraction() {
+  return performance.now() - lastPageInteractionAt < USER_INTERACTION_SUPPRESSION_MS;
 }
 
 function removePrimitiveHighlight() {
@@ -592,13 +607,34 @@ function isEditableTarget(target: EventTarget | null) {
     tag === "select";
 }
 
+function isInteractiveTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (isEditableTarget(target)) return true;
+  return !!target.closest([
+    "a[href]",
+    "button",
+    "summary",
+    "[role='button']",
+    "[role='link']",
+    "[role='checkbox']",
+    "[role='radio']",
+    "[role='switch']",
+    "[role='tab']",
+    "[role='menuitem']",
+    "[role='option']",
+    "[aria-controls]",
+    "[aria-expanded]",
+  ].join(","));
+}
+
 function isBudgeActivationEvent(event: KeyboardEvent) {
   return (event.key === " " || event.code === "Space") &&
     !event.metaKey &&
     !event.ctrlKey &&
     !event.altKey &&
     !event.shiftKey &&
-    !isEditableTarget(event.target);
+    !isFromBudgeUi(event.target) &&
+    !isInteractiveTarget(event.target);
 }
 
 function withReactGrabFreezeSuspended<T>(read: () => T): T {
@@ -688,6 +724,7 @@ function startPrimitiveSelectionRuntime() {
   window.addEventListener(
     "keydown",
     (event) => {
+      notePageInteraction(event);
       if (!isBudgeActivationEvent(event)) {
         if (primitiveSelectionActive && event.key === "Escape") {
           event.preventDefault();
@@ -716,6 +753,8 @@ function startPrimitiveSelectionRuntime() {
   );
 
   window.addEventListener("blur", stopPrimitiveSelection);
+
+  window.addEventListener("pointerdown", notePageInteraction, { capture: true, passive: true });
 
   window.addEventListener(
     "pointermove",
@@ -806,7 +845,7 @@ function startAutoDetect() {
 
       if (record.type !== "attributes" || !(record.target instanceof HTMLElement)) continue;
       const el = record.target;
-      if (shouldIgnoreElement(el) || isRecentBudgePreview()) {
+      if (shouldIgnoreElement(el) || isRecentBudgePreview() || isRecentPageInteraction()) {
         snapshots.set(el, snapshotElement(el));
         continue;
       }
