@@ -29,6 +29,7 @@ export const widget = createIsolet({
 
 type BudgeRuntimeConfig = { slides?: BudgeSlide[]; autoFocus?: boolean };
 type ReactGrabElementContext = Awaited<ReturnType<typeof getElementContext>>;
+type AutoConfigSource = "detect" | "selection";
 
 const AUTO_DETECT_ATTR = "data-budge-autodetect";
 const BUDGE_TARGET_ATTR = "data-budge-target";
@@ -46,9 +47,10 @@ const BUDGE_HIGHLIGHT_FILL = "rgba(245, 158, 11, 0.14)";
 const USER_INTERACTION_SUPPRESSION_MS = 1200;
 const MAX_SELECTION_SLIDES = 40;
 
-let explicitConfigFingerprint = "";
+let activeConfigFingerprint = "";
 let autoConfig: BudgeRuntimeConfig | null = null;
 let autoConfigFingerprint = "";
+let autoConfigSource: AutoConfigSource | null = null;
 let autoTarget: HTMLElement | null = null;
 let autoTargetHadMarker = false;
 let primitiveSelectionStarted = false;
@@ -86,18 +88,19 @@ function configFingerprint(config: BudgeRuntimeConfig | null) {
 function sync() {
   const explicitConfig = readConfig();
   const explicitFingerprint = configFingerprint(explicitConfig);
-  const config = explicitConfig ? explicitConfig : autoConfig;
-  const fingerprint = explicitConfig ? explicitFingerprint : autoConfigFingerprint;
+  const useAutoConfig = !!autoConfig && (!explicitConfig || autoConfigSource === "selection");
+  const config = useAutoConfig ? autoConfig : explicitConfig;
+  const fingerprint = useAutoConfig ? autoConfigFingerprint : explicitFingerprint;
 
   if (hasSlides(config) && !widget.mounted) {
     widget.mount(document.body, { slides: config.slides, autoFocus: config.autoFocus ?? true });
-  } else if (hasSlides(config) && widget.mounted && fingerprint !== explicitConfigFingerprint) {
+  } else if (hasSlides(config) && widget.mounted && fingerprint !== activeConfigFingerprint) {
     widget.update({ slides: config.slides, autoFocus: config.autoFocus ?? true });
   } else if (!hasSlides(config) && widget.mounted) {
     widget.unmount();
   }
 
-  explicitConfigFingerprint = fingerprint;
+  activeConfigFingerprint = fingerprint;
 }
 
 function isLocalDevHost() {
@@ -641,8 +644,9 @@ function updateAutoTarget(el: HTMLElement) {
   if (!autoTargetHadMarker) el.setAttribute(BUDGE_TARGET_ATTR, "");
 }
 
-function setAutoConfig(el: HTMLElement, slides: BudgeSlide[]) {
+function setAutoConfig(el: HTMLElement, slides: BudgeSlide[], source: AutoConfigSource = "detect") {
   updateAutoTarget(el);
+  autoConfigSource = source;
   autoConfig = { slides, autoFocus: true };
   autoConfigFingerprint = configFingerprint(autoConfig);
   sync();
@@ -776,7 +780,7 @@ function selectPrimitiveTarget(target: HTMLElement | null) {
   const slides = buildSelectionSlides(target);
   stopPrimitiveSelection();
   if (slides.length > 0) {
-    setAutoConfig(target, slides);
+    setAutoConfig(target, slides, "selection");
   }
 }
 
