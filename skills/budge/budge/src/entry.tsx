@@ -723,8 +723,8 @@ function getPrimitiveTargetAt(x: number, y: number) {
 }
 
 function startPrimitiveFreeze() {
-  if (primitiveSelectionFreezeActive || isFreezeActive()) return;
-  freeze();
+  if (primitiveSelectionFreezeActive) return;
+  if (!isFreezeActive()) freeze();
   primitiveSelectionFreezeActive = true;
 }
 
@@ -860,6 +860,12 @@ function startPrimitiveSelectionRuntime() {
     (event) => {
       if (!primitiveSelectionActive && !suppressPrimitiveClick) return;
       blockPrimitiveEvent(event);
+      if (primitiveSelectionActive) {
+        const target = event instanceof MouseEvent
+          ? primitiveSelectionTarget ?? getPrimitiveTargetAt(event.clientX, event.clientY)
+          : primitiveSelectionTarget;
+        selectPrimitiveTarget(target);
+      }
       clearPrimitiveClickSuppression();
     },
     { capture: true },
