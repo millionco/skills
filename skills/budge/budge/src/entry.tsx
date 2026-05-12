@@ -57,6 +57,8 @@ let primitiveSelectionStarted = false;
 let primitiveSelectionActive = false;
 let primitiveSelectionFreezeActive = false;
 let primitiveSelectionTarget: HTMLElement | null = null;
+let primitiveSelectionPath: HTMLElement[] = [];
+let primitiveSelectionPathIndex = 0;
 let primitiveHighlightEl: HTMLDivElement | null = null;
 let suppressPrimitiveClick = false;
 let suppressPrimitiveClickTimer: number | null = null;
@@ -722,6 +724,18 @@ function getPrimitiveTargetAt(x: number, y: number) {
   return el;
 }
 
+function getPrimitiveSelectionPath(target: HTMLElement | null) {
+  const path: HTMLElement[] = [];
+  let current: HTMLElement | null = target;
+
+  while (current && current !== document.documentElement && current !== document.body) {
+    if (!shouldIgnoreElement(current)) path.push(current);
+    current = current.parentElement;
+  }
+
+  return path;
+}
+
 function startPrimitiveFreeze() {
   if (primitiveSelectionFreezeActive) return;
   if (!isFreezeActive()) freeze();
@@ -764,13 +778,29 @@ function startPrimitiveSelection() {
 function stopPrimitiveSelection() {
   primitiveSelectionActive = false;
   primitiveSelectionTarget = null;
+  primitiveSelectionPath = [];
+  primitiveSelectionPathIndex = 0;
   removePrimitiveHighlight();
   stopPrimitiveFreeze();
 }
 
 function updatePrimitiveSelectionTarget(x: number, y: number) {
   if (!primitiveSelectionActive) return;
-  primitiveSelectionTarget = getPrimitiveTargetAt(x, y);
+  primitiveSelectionPath = getPrimitiveSelectionPath(getPrimitiveTargetAt(x, y));
+  primitiveSelectionPathIndex = 0;
+  primitiveSelectionTarget = primitiveSelectionPath[primitiveSelectionPathIndex] ?? null;
+  updatePrimitiveHighlight(primitiveSelectionTarget);
+}
+
+function refinePrimitiveSelection(direction: number) {
+  if (!primitiveSelectionActive || primitiveSelectionPath.length === 0) return;
+  const next = Math.max(
+    0,
+    Math.min(primitiveSelectionPath.length - 1, primitiveSelectionPathIndex + direction),
+  );
+  if (next === primitiveSelectionPathIndex) return;
+  primitiveSelectionPathIndex = next;
+  primitiveSelectionTarget = primitiveSelectionPath[primitiveSelectionPathIndex] ?? null;
   updatePrimitiveHighlight(primitiveSelectionTarget);
 }
 
@@ -798,6 +828,13 @@ function startPrimitiveSelectionRuntime() {
     "keydown",
     (event) => {
       notePageInteraction(event);
+      if (primitiveSelectionActive && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        event.preventDefault();
+        event.stopPropagation();
+        refinePrimitiveSelection(event.key === "ArrowUp" ? 1 : -1);
+        return;
+      }
+
       if (!isBudgeActivationEvent(event)) {
         if (primitiveSelectionActive && event.key === "Escape") {
           event.preventDefault();
