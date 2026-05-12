@@ -775,11 +775,17 @@ function updatePrimitiveSelectionTarget(x: number, y: number) {
 }
 
 function selectPrimitiveTarget(target: HTMLElement | null) {
-  if (!target) return;
+  let slides: BudgeSlide[] = [];
 
-  const slides = buildSelectionSlides(target);
-  stopPrimitiveSelection();
-  if (slides.length > 0) {
+  try {
+    if (target) {
+      slides = buildSelectionSlides(target);
+    }
+  } finally {
+    stopPrimitiveSelection();
+  }
+
+  if (target && slides.length > 0) {
     setAutoConfig(target, slides, "selection");
   }
 }

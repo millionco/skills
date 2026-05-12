@@ -456,8 +456,10 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
   }, []);
 
   useEffect(() => {
-    if (autoFocus) containerRef.current?.focus();
-  }, [autoFocus]);
+    if (!autoFocus) return;
+    const id = requestAnimationFrame(() => containerRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [autoFocus, slidesKey]);
 
 
 
