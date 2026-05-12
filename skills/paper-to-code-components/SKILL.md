@@ -1,6 +1,6 @@
 ---
 name: paper-to-code-components
-description: Use when implementing Paper MCP, Paper-to-code, design-to-code, Viewfinder, or Paper-exported JSX in React/Next.js apps. Covers component candidates, repeated visual groups, prop shapes, data-paper-* roots, and avoiding monolithic JSX.
+description: Use when implementing Paper MCP, Paper-to-code, design-to-code, Viewfinder, or Paper-exported JSX in React/Next.js apps. Covers component candidates, globals.css tokens for arbitrary values, shadcn reuse, data-paper-* roots, and avoiding monolithic JSX.
 ---
 
 # Paper-to-Code Componentization
@@ -65,6 +65,33 @@ Keep one-off decorative leaf elements inside the nearest semantic component. Ext
 - Do not add hooks for static presentational variants. Use props, classes, CSS variables, or data attributes.
 - Reuse existing app components, icons, assets, and helpers before creating new local versions.
 
+## 5. Standardize Arbitrary Values
+
+When Paper-exported JSX contains arbitrary values, preserve the rendered pixels and move the values into named project tokens in `globals.css` before completion.
+
+Tokenize arbitrary values for:
+
+1. Typography: `text-[21px]/9.5`, `tracking-[-0.02em]`, font families, font weights
+2. Colors: `text-[color(display-p3_...)]`, arbitrary backgrounds, borders, gradients
+3. Shape and depth: `rounded-[13px]`, custom shadows, outlines, rings
+4. Layout and spacing: arbitrary widths, heights, gaps, padding, margins, transforms
+
+Use the local Tailwind/CSS pattern already present in `globals.css`, such as `@theme`, CSS variables, or project token aliases. Replace opaque inline arbitrary classes with named utilities backed by those tokens. Do not change the visual value while naming it.
+
+**Bad:** Keep `text-[21px]/9.5 tracking-[-0.02em] text-[color(display-p3_0.251_0.251_0.251)]` inline because it matches Paper.
+
+**Good:** Add matching `globals.css` tokens for the 21px text size, line-height, tracking, and P3 color, then use the named utilities in the component.
+
+## 6. Reuse shadcn Before Custom Markup
+
+Before creating custom JSX for controls or common UI surfaces, deeply search for shadcn candidates.
+
+1. Search the project for existing shadcn components, especially `components/ui`, `components.json`, imports from `@/components/ui/*`, and local wrappers around shadcn primitives.
+2. Check `https://ui.shadcn.com/` for canonical components that match the pasted design, including Button, Card, Tabs, Input, Dialog, Badge, Dropdown Menu, Accordion, Tooltip, Select, Checkbox, Radio Group, Switch, Sheet, Popover, and Table.
+3. If a local or canonical shadcn component matches the semantic role, repurpose and restyle it to match the Paper paste instead of recreating equivalent markup.
+4. Record the searched local paths, shadcn website component names, and reuse/no-match decision in your working notes or final response.
+5. Only create custom markup after documenting why no existing or canonical shadcn component fits the semantic role.
+
 ## Example
 
 **Bad:** Paste the full Paper export into `app/page.tsx`, duplicate six testimonial cards inline, and plan to "clean it up later" after pixel matching.
@@ -82,6 +109,8 @@ Keep one-off decorative leaf elements inside the nearest semantic component. Ext
 | "The user only asked to paste the design." | Paper-to-code implementation includes component boundaries. |
 | "`data-paper-*` attributes clutter the JSX." | Keep them on useful roots so Viewfinder can map code back to design. |
 | "This static variant needs a hook." | Use props/classes/CSS instead. Hooks are for behavior, not static appearance. |
+| "Arbitrary Tailwind is the only way to match pixels." | Put the same values in `globals.css` tokens and use the named utilities. |
+| "A quick component search found nothing obvious." | Search local shadcn usage and `https://ui.shadcn.com/` before writing custom equivalents. |
 
 ## Before Marking Complete, You MUST:
 
@@ -91,8 +120,10 @@ Keep one-off decorative leaf elements inside the nearest semantic component. Ext
 4. Keep route/page files as composition, not giant copied JSX exports
 5. Preserve Paper visual fidelity after componentization
 6. Keep relevant Viewfinder/Paper `data-paper-*` attributes on rendered roots
-7. Use the project's existing styling system and avoid unnecessary client components/hooks
-8. Read `package.json` and run available scripts named `lint`, `typecheck`, `test`, and `build` with the repo's package manager; if a script is missing, state that it is missing
-9. Review the final diff and remove duplicated JSX blocks before responding
+7. Move arbitrary Paper values into `globals.css` tokens without changing their rendered values
+8. Deeply search local shadcn components and `https://ui.shadcn.com/`; record the searched candidates and repurpose/restyle matches before creating custom markup
+9. Use the project's existing styling system and avoid unnecessary client components/hooks
+10. Read `package.json` and run available scripts named `lint`, `typecheck`, `test`, and `build` with the repo's package manager; if a script is missing, state that it is missing
+11. Review the final diff and remove duplicated JSX blocks before responding
 
 Do not skip any step. No exceptions for "small export," "just this once," "the user did not ask," "pixel matching first," or "I'll refactor after it works."
