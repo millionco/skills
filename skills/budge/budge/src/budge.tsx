@@ -192,6 +192,47 @@ function slideValueChanged(slide: BudgeSlide, value: number) {
   return Math.abs(value - slide.original) > 0.001;
 }
 
+function searchableSlideText(slide: BudgeSlide) {
+  return `${slide.label} ${slide.property}`.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizeSearchQuery(query: string) {
+  return query.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function fuzzyScore(query: string, text: string) {
+  if (!query) return 0;
+  const exact = text.indexOf(query);
+  if (exact >= 0) return 1000 - exact;
+
+  let score = 0;
+  let last = -1;
+  for (const char of query) {
+    const idx = text.indexOf(char, last + 1);
+    if (idx === -1) return -Infinity;
+    score += idx === last + 1 ? 12 : 4;
+    score -= idx * 0.1;
+    last = idx;
+  }
+  return score;
+}
+
+function bestSearchSlideIndex(slides: BudgeSlide[], query: string) {
+  const normalized = normalizeSearchQuery(query);
+  if (!normalized) return -1;
+
+  let bestIndex = -1;
+  let bestScore = -Infinity;
+  slides.forEach((slide, index) => {
+    const score = fuzzyScore(normalized, searchableSlideText(slide));
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+  return bestScore === -Infinity ? -1 : bestIndex;
+}
+
 const DEFAULT_SLIDES: BudgeSlide[] = [
   { label: "font size", property: "font-size", min: 32, max: 86, value: 61, original: 61, unit: "px" },
   { label: "opacity", property: "opacity", min: 0, max: 100, value: 100, original: 100, unit: "%" },
@@ -440,7 +481,12 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
   const [snapEnabled, setSnapEnabled] = useState(false);
   const snapEnabledRef = useRef(false);
   const [toastLabel, setToastLabel] = useState<string | null>(null);
+  const [propertySearch, setPropertySearch] = useState("");
+  const propertySearchRef = useRef("");
   const toastLabelTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const propertySearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pendingShortcutTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pendingShortcutRef = useRef<"reset" | "token" | null>(null);
 
   useEffect(() => {
     discoveredRef.current = discoverTokens();
@@ -492,10 +538,15 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     setConfirmed(false);
     setShowPrompt(false);
     setActiveKey(null);
+    setPropertySearch("");
+    propertySearchRef.current = "";
+    pendingShortcutRef.current = null;
     digitBufferRef.current = "";
     clearTimeout(digitTimeoutRef.current);
     clearTimeout(budgeTimeoutRef.current);
     clearTimeout(confirmedTimeoutRef.current);
+    clearTimeout(propertySearchTimeoutRef.current);
+    clearTimeout(pendingShortcutTimeoutRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slidesKey]);
 
@@ -552,6 +603,39 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
 
     if (soundOn) playTabSwitch();
 
+    containerRef.current?.focus();
+  }, [slidesKey, soundOn]);
+
+  const selectSlide = useCallback((next: number) => {
+    const N = SLIDES.length;
+    if (next < 0 || next >= N || next === slideRef.current) return;
+
+    const cur = slideRef.current;
+    slideValuesRef.current[cur] = valueRef.current;
+    slideRef.current = next;
+    setSlide(next);
+    const restored = slideValuesRef.current[next];
+    valueRef.current = restored;
+    setValue(restored);
+    setTypedRaw(null);
+    setIsBudging(false);
+    setConfirmed(false);
+    setShowPrompt(false);
+    setActiveKey(null);
+    digitBufferRef.current = "";
+    clearTimeout(digitTimeoutRef.current);
+    clearTimeout(budgeTimeoutRef.current);
+    clearTimeout(confirmedTimeoutRef.current);
+
+    clearTimeout(slideRangeTimeoutRef.current);
+    setSlideRangeVisible(true);
+    setSlideRangeIdle(false);
+    slideRangeTimeoutRef.current = setTimeout(() => {
+      setSlideRangeVisible(false);
+      setTimeout(() => setSlideRangeIdle(true), 400);
+    }, 1000);
+
+    if (soundOn) playTabSwitch();
     containerRef.current?.focus();
   }, [slidesKey, soundOn]);
 
@@ -700,12 +784,86 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     if (soundOn) playConfirm();
   }, [f.buttonFeedback, slidesKey, soundOn]);
 
+  const toggleTokenSnap = useCallback(() => {
+    const next = !snapEnabledRef.current;
+    snapEnabledRef.current = next;
+    setSnapEnabled(next);
+    if (soundOn) playTokenSnap(next);
+    setToastLabel(next ? "token snap on" : "token snap off");
+    clearTimeout(slideRangeTimeoutRef.current);
+    clearTimeout(toastLabelTimeoutRef.current);
+    setSlideRangeVisible(true);
+    setSlideRangeIdle(false);
+    toastLabelTimeoutRef.current = setTimeout(() => {
+      setToastLabel(null);
+      setSlideRangeVisible(false);
+      setTimeout(() => setSlideRangeIdle(true), 400);
+    }, 1200);
+  }, [soundOn]);
+
+  const clearPropertySearch = useCallback(() => {
+    propertySearchRef.current = "";
+    setPropertySearch("");
+    pendingShortcutRef.current = null;
+    clearTimeout(propertySearchTimeoutRef.current);
+    clearTimeout(pendingShortcutTimeoutRef.current);
+  }, []);
+
+  const runPendingShortcut = useCallback(() => {
+    const pending = pendingShortcutRef.current;
+    pendingShortcutRef.current = null;
+    clearTimeout(pendingShortcutTimeoutRef.current);
+    propertySearchRef.current = "";
+    setPropertySearch("");
+    if (pending === "reset") {
+      reset();
+    } else if (pending === "token") {
+      toggleTokenSnap();
+    }
+  }, [reset, toggleTokenSnap]);
+
+  const appendPropertySearch = useCallback((char: string) => {
+    clearTimeout(propertySearchTimeoutRef.current);
+    clearTimeout(pendingShortcutTimeoutRef.current);
+    pendingShortcutRef.current = null;
+
+    const nextQuery = `${propertySearchRef.current}${char}`;
+    propertySearchRef.current = nextQuery;
+    setPropertySearch(nextQuery);
+
+    const nextSlide = bestSearchSlideIndex(slidesRef.current, nextQuery);
+    if (nextSlide >= 0) selectSlide(nextSlide);
+
+    propertySearchTimeoutRef.current = setTimeout(clearPropertySearch, 1200);
+  }, [clearPropertySearch, selectSlide]);
+
+  const queueShortcutOrSearch = useCallback((char: string, shortcut: "reset" | "token") => {
+    pendingShortcutRef.current = shortcut;
+    propertySearchRef.current = char;
+    setPropertySearch(char);
+    clearTimeout(propertySearchTimeoutRef.current);
+    clearTimeout(pendingShortcutTimeoutRef.current);
+    pendingShortcutTimeoutRef.current = setTimeout(runPendingShortcut, 220);
+  }, [runPendingShortcut]);
+
   const stepRef = useRef(step);
   stepRef.current = step;
   const goToSlideRef = useRef(goToSlide);
   goToSlideRef.current = goToSlide;
+  const selectSlideRef = useRef(selectSlide);
+  selectSlideRef.current = selectSlide;
   const resetRef = useRef(reset);
   resetRef.current = reset;
+  const toggleTokenSnapRef = useRef(toggleTokenSnap);
+  toggleTokenSnapRef.current = toggleTokenSnap;
+  const appendPropertySearchRef = useRef(appendPropertySearch);
+  appendPropertySearchRef.current = appendPropertySearch;
+  const queueShortcutOrSearchRef = useRef(queueShortcutOrSearch);
+  queueShortcutOrSearchRef.current = queueShortcutOrSearch;
+  const clearPropertySearchRef = useRef(clearPropertySearch);
+  clearPropertySearchRef.current = clearPropertySearch;
+  const runPendingShortcutRef = useRef(runPendingShortcut);
+  runPendingShortcutRef.current = runPendingShortcut;
   const copyRef = useRef(copy);
   copyRef.current = copy;
 
@@ -715,7 +873,38 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     function onKeyDown(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      if (e.key === "ArrowUp") {
+      const hasPropertySearch = propertySearchRef.current.length > 0;
+      const isPrintableSearchChar = e.key.length === 1 && /^[a-z0-9 -]$/i.test(e.key);
+
+      if (hasPropertySearch && e.key === "Backspace") {
+        e.preventDefault();
+        clearTimeout(pendingShortcutTimeoutRef.current);
+        pendingShortcutRef.current = null;
+        const nextQuery = propertySearchRef.current.slice(0, -1);
+        propertySearchRef.current = nextQuery;
+        setPropertySearch(nextQuery);
+        const nextSlide = bestSearchSlideIndex(slidesRef.current, nextQuery);
+        if (nextSlide >= 0) selectSlideRef.current(nextSlide);
+        clearTimeout(propertySearchTimeoutRef.current);
+        if (nextQuery) {
+          propertySearchTimeoutRef.current = setTimeout(clearPropertySearchRef.current, 1200);
+        }
+      } else if (hasPropertySearch && e.key === "Escape") {
+        e.preventDefault();
+        clearPropertySearchRef.current();
+      } else if (hasPropertySearch && e.key === "Enter") {
+        e.preventDefault();
+        clearPropertySearchRef.current();
+      } else if (isPrintableSearchChar && (hasPropertySearch || !f.numberInput || e.key < "0" || e.key > "9")) {
+        e.preventDefault();
+        if (!hasPropertySearch && (e.key === "r" || e.key === "R")) {
+          queueShortcutOrSearchRef.current(e.key, "reset");
+        } else if (!hasPropertySearch && (e.key === "t" || e.key === "T")) {
+          queueShortcutOrSearchRef.current(e.key, "token");
+        } else {
+          appendPropertySearchRef.current(e.key);
+        }
+      } else if (e.key === "ArrowUp") {
         e.preventDefault();
         stepRef.current(1, e.shiftKey, e.repeat);
         setActiveKey("up");
@@ -772,20 +961,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
         resetRef.current();
       } else if ((e.key === "t" || e.key === "T") && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
-        const next = !snapEnabledRef.current;
-        snapEnabledRef.current = next;
-        setSnapEnabled(next);
-        if (soundOn) playTokenSnap(next);
-        setToastLabel(next ? "token snap on" : "token snap off");
-        clearTimeout(slideRangeTimeoutRef.current);
-        clearTimeout(toastLabelTimeoutRef.current);
-        setSlideRangeVisible(true);
-        setSlideRangeIdle(false);
-        toastLabelTimeoutRef.current = setTimeout(() => {
-          setToastLabel(null);
-          setSlideRangeVisible(false);
-          setTimeout(() => setSlideRangeIdle(true), 400);
-        }, 1200);
+        toggleTokenSnapRef.current();
       } else if (e.key === "Enter") {
         e.preventDefault();
         copyRef.current();
@@ -814,6 +990,8 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
       el.removeEventListener("keydown", onKeyDown);
       el.removeEventListener("keyup", onKeyUp);
       clearTimeout(budgeTimeoutRef.current);
+      clearTimeout(propertySearchTimeoutRef.current);
+      clearTimeout(pendingShortcutTimeoutRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -842,6 +1020,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
     "max-width 0.45s cubic-bezier(0.32, 0.72, 0, 1), " +
     "margin-right 0.45s cubic-bezier(0.32, 0.72, 0, 1), " +
     "opacity 0.15s ease";
+  const labelText = toastLabel ?? (propertySearch ? `${propertySearch} -> ${s.label}` : s.label);
 
   return (
     <>
@@ -904,7 +1083,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
               letterSpacing: "0.01em",
               whiteSpace: "nowrap",
             }}>
-              {toastLabel ?? s.label}
+              {labelText}
             </span>
           </div>
           <div style={{
