@@ -404,6 +404,8 @@ function Arrow({
 
 export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; slides?: BudgeSlide[] } = {}) {
   const SLIDES = slidesProp && slidesProp.length > 0 ? slidesProp : DEFAULT_SLIDES;
+  const slidesRef = useRef(SLIDES);
+  slidesRef.current = SLIDES;
   const slidesKey = JSON.stringify(SLIDES);
   const f = { keyboard: true, expandValue: true, animatedDigits: true, arrowBounce: true, barPhysics: true, boundaryShake: true, sound: true, buttonFeedback: true, numberInput: true, shiftStep: true, idleOpacity: true, showLabel: true, showButtons: true, showText: true };
   const [value, setValue] = useState(SLIDES[0].value);
@@ -698,6 +700,8 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
 
   const stepRef = useRef(step);
   stepRef.current = step;
+  const goToSlideRef = useRef(goToSlide);
+  goToSlideRef.current = goToSlide;
   const resetRef = useRef(reset);
   resetRef.current = reset;
   const copyRef = useRef(copy);
@@ -732,7 +736,8 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
         if (digitBufferRef.current.length >= 3) return;
         digitBufferRef.current += e.key;
         const num = parseInt(digitBufferRef.current, 10);
-        const ds = SLIDES[slideRef.current];
+        const ds = slidesRef.current[slideRef.current];
+        if (!ds) return;
         if (!isNaN(num)) {
           setTypedRaw(digitBufferRef.current);
           setIsBudging(true);
@@ -747,7 +752,8 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
         digitTimeoutRef.current = setTimeout(() => {
           const final = parseInt(digitBufferRef.current, 10);
           digitBufferRef.current = "";
-          const ds2 = SLIDES[slideRef.current];
+          const ds2 = slidesRef.current[slideRef.current];
+          if (!ds2) return;
           if (!isNaN(final) && (final < ds2.min || final > ds2.max)) {
             const wrapped = wrapValue(final, ds2.min, ds2.max);
             valueRef.current = wrapped;
@@ -784,11 +790,11 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         if (f.buttonFeedback) { setPressedButton("prev"); setTimeout(() => setPressedButton(null), 70); }
-        goToSlide(-1);
+        goToSlideRef.current(-1);
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         if (f.buttonFeedback) { setPressedButton("next"); setTimeout(() => setPressedButton(null), 70); }
-        goToSlide(1);
+        goToSlideRef.current(1);
       }
     }
 
