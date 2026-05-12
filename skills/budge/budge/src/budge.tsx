@@ -24,6 +24,12 @@ export interface BudgeToken {
   numeric?: number;
 }
 
+export interface BudgeElementContext {
+  componentName?: string | null;
+  selector?: string | null;
+  htmlPreview: string;
+}
+
 export interface BudgeSlide {
   label: string;
   property: string;
@@ -37,6 +43,7 @@ export interface BudgeSlide {
   tokens?: BudgeToken[];
   file?: string;
   line?: number;
+  elementContext?: BudgeElementContext;
 }
 
 type TokenBuckets = Record<BudgeScale, BudgeToken[]>;
@@ -136,6 +143,23 @@ function formatSlideValue(
 function slideLocation(slide: BudgeSlide) {
   if (!slide.file) return "";
   return ` in \`${slide.file}\`${slide.line ? ` at line ${slide.line}` : ""}`;
+}
+
+function promptElementContext(slides: BudgeSlide[]) {
+  const context = slides.find((slide) => slide.elementContext?.htmlPreview)?.elementContext;
+  if (!context?.htmlPreview) return "";
+
+  const label = context.componentName
+    ? `Changed component (\`${context.componentName}\`):`
+    : "Changed element:";
+
+  return [
+    "",
+    label,
+    "```html",
+    context.htmlPreview,
+    "```",
+  ].join("\n");
 }
 
 function nextTokenIndex(tokens: BudgeToken[], value: number, direction: number, shift: boolean): number {
@@ -636,7 +660,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
       ? assignments[0]?.location ?? ""
       : "";
 
-    const prompt = assignments.length === 1
+    const editPrompt = assignments.length === 1
       ? `Set \`${assignments[0].property}\` to \`${assignments[0].value}\`${assignments[0].location}`
       : [
           `Set these properties${sharedLocation}:`,
@@ -645,6 +669,7 @@ export function Budge({ autoFocus, slides: slidesProp }: { autoFocus?: boolean; 
             return `- \`${assignment.property}\` to \`${assignment.value}\`${location}`;
           }),
         ].join("\n");
+    const prompt = `${editPrompt}${promptElementContext(SLIDES)}`;
     navigator.clipboard?.writeText(prompt);
     setShowPrompt(true);
     setConfirmed(true);

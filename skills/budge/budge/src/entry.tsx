@@ -2,7 +2,7 @@ import { createIsolet } from "isolet-js";
 import { react } from "isolet-js/react";
 import { freeze, getElementContext, isFreezeActive, unfreeze } from "react-grab/primitives";
 import { Budge, setAssetBase } from "./budge";
-import type { BudgeSlide } from "./budge";
+import type { BudgeElementContext, BudgeSlide } from "./budge";
 
 const budgeScript = typeof document !== "undefined"
   ? document.currentScript as HTMLScriptElement | null
@@ -548,19 +548,32 @@ function getSourceFrame(context: ReactGrabElementContext) {
     null;
 }
 
+function getPromptElementContext(context: ReactGrabElementContext): BudgeElementContext | undefined {
+  const htmlPreview = context.htmlPreview.trim();
+  if (!htmlPreview) return undefined;
+
+  return {
+    componentName: context.componentName,
+    selector: context.selector,
+    htmlPreview,
+  };
+}
+
 async function attachSourceContext(el: HTMLElement, fingerprint: string) {
   if (!autoConfig?.slides) return;
 
   try {
     const context = await getElementContext(el);
     const source = getSourceFrame(context);
-    if (!source?.fileName || fingerprint !== autoConfigFingerprint || autoTarget !== el || !autoConfig?.slides) return;
+    const elementContext = getPromptElementContext(context);
+    if (fingerprint !== autoConfigFingerprint || autoTarget !== el || !autoConfig?.slides) return;
     autoConfig = {
       ...autoConfig,
       slides: autoConfig.slides.map((slide) => ({
         ...slide,
-        file: source.fileName,
-        line: source.lineNumber ?? undefined,
+        file: source?.fileName ?? slide.file,
+        line: source?.lineNumber ?? slide.line,
+        elementContext: elementContext ?? slide.elementContext,
       })),
     };
     autoConfigFingerprint = configFingerprint(autoConfig);
