@@ -1,137 +1,115 @@
 ---
-name: converting-paper-to-flex
-description: Use when converting Paper design nodes from absolute positioning to flex containers. Covers absolute-to-flex conversion, restructuring layouts, preserving SVGs/images, cloning nodes, computing flex gaps from coordinates, auto-layout, and layered card effects.
+name: paper-flex
+description: Use when converting Paper canvas or design nodes from absolute positioning to flex or auto-layout. Covers Paper MCP absolute-to-flex restructuring, x-paper-clone preservation, clone z-order, computed spacing, shadow cleanup, SVG/image fidelity, layered cards, and screenshot verification.
 ---
 
-# Paper Flex Conversion Specialist
+# Paper Flex
 
-You convert absolutely-positioned Paper design layouts into flex container layouts while preserving every visual element exactly.
+You convert Paper layouts from absolute positioning into flex structure without losing the original pixels.
 
-## Critical Rules
+Hard rule: preserve existing visual nodes first. Recreate only plain layout wrappers or simple text/div surfaces whose computed styles are fully known.
 
-### NEVER Delete-and-Recreate
+## RED/GREEN Intent
 
-**NEVER delete original nodes and recreate them from scratch.** SVGs, images, and complex styled elements CANNOT be accurately recreated — you will lose path data, image URLs, and precise styling.
+This skill closes failures seen without Paper-specific guidance:
 
-**Bad:** Delete all children, then write new HTML with hand-drawn SVGs.
-**Good:** Clone existing nodes into new flex containers using `x-paper-clone`.
+- Using generic move/relative positioning instead of `x-paper-clone` plus `update_styles`
+- Losing SVG path data, image fills, crops, or exact shadows by rebuilding nodes
+- Breaking z-order because Paper appends `x-paper-clone` nodes after normal divs
+- Leaving cloned absolute `left`/`top` offsets inside flex flow
+- Letting shadows or filters become visible/inherited after restructuring
 
-No exceptions for "it's just a simple shape" or "I can approximate it." If it exists in the design, clone it.
+GREEN outcome: the converted node has a readable flex hierarchy, original SVG/image fidelity, verified z-order, and a screenshot that still matches the source.
 
-### `x-paper-clone` Ignores Position Overrides
+## Required First Pass
 
-Setting `style="position: absolute; ..."` on an `<x-paper-clone>` tag does NOT change the cloned node's position. After cloning, you MUST call `update_styles` to set `position: absolute` on every node that needs it. Batch all position updates into a single `update_styles` call.
+Before writing or deleting anything:
 
-### Clone Ordering — Paper Reorders Clones After Divs
+1. Call `get_guide({ topic: "paper-mcp-instructions" })`.
+2. Call `get_basic_info` and `get_selection` to confirm target artboard/node scope.
+3. Call `get_screenshot` on the target and keep it as the visual baseline.
+4. Call `get_tree_summary(depth=10)` and `get_children` on the target.
+5. Call `get_computed_styles` for the target and every direct visual child. Record `left`, `top`, `width`, `height`, colors, fonts, shadows, filters, radii, and image fills.
+6. If text styling will be created or changed, call `get_font_family_info` before writing typography.
 
-**Paper places `x-paper-clone` elements AFTER regular `<div>` elements in the child list, regardless of HTML source order.** This breaks z-order when you mix clones and divs in a single `write_html` call.
+Do not start conversion from memory or screenshot alone. The computed styles are the source of truth for flex math.
 
-**Fix:** Insert decorative background clones in a SEPARATE `write_html` call BEFORE inserting content:
+## Source Preservation Rules
 
-```
-Step 1: write_html → container shell (empty)
-Step 2: write_html into container → <x-paper-clone node-id="BG_RECT" />
-Step 3: write_html into container → <div>...content...</div>
-```
+1. Keep the original nodes until the converted layout has passed screenshot comparison.
+2. Use `<x-paper-clone node-id="...">` for SVGs, images, complex vectors, icons, masks, and styled shapes.
+3. Never hand-redraw an SVG, image, logo, or complex decorative layer. No exceptions for "simple enough."
+4. After cloning into flex flow, batch `update_styles` to set `left: "0px"` and `top: "0px"` on every flow clone.
+5. After cloning anything that must remain overlaid, batch `update_styles` to set the required `position`, `left`, and `top`. Inline styles on `<x-paper-clone>` are not enough.
 
-If clones ended up in the wrong z-order: create a temp frame, clone content elements there, delete originals from container, clone content back from temp (appends after decorative clones), delete temp frame.
+## Conversion Workflow
 
-### Cloned Elements Retain Absolute Coordinates
+1. Map the absolute children into semantic groups: background, header row, text stack, media, card, controls, overlays.
+2. Compute spacing from coordinates:
 
-Clones keep their original `left`/`top` values, which act as offsets in flex containers and push elements off-screen. **After cloning into flex containers, call `update_styles` to reset `left: "0px"` and `top: "0px"` on any clone in flex flow.**
-
-### Hidden Shadows Become Visible in Flex Layouts
-
-In flat layouts, some elements' `box-shadow` is hidden behind later opaque siblings — flex conversion removes that coverage. **During step 2, for each element with `box-shadow`:** check if a LATER sibling has an opaque `backgroundColor` covering the same area. If yes, call `update_styles` to set `boxShadow: "none"` on these clones after conversion.
-
-### Card Stack Constraints
-
-When building layered card effects (decorative back-card behind a front card):
-
-1. Card stack wrapper must NOT use `display: flex` — use a plain frame with explicit `width` and `height`
-2. Both cards must use `position: absolute` — never `position: relative` for the front card
-3. Back card must be FIRST child (renders behind)
-4. Overlapping elements (badges, labels) must be LAST child
-
-See `references/layered-cards.md` for examples.
-
-## Workflow
-
-### 1. Screenshot + analyze structure
-
-Call `get_screenshot` and `get_tree_summary(depth=10)` on the target node. Identify every child element and its role.
-
-### 2. Get computed styles for ALL children
-
-Call `get_computed_styles` with every child node ID. Record positions, dimensions, colors, fonts, shadows, filters, border-radius, and `backgroundImage` URLs.
-
-### 3. Scan for reference artboards
-
-Call `get_basic_info` to list all artboards. Check if another artboard contains a flex version or reusable elements. If found, clone from there.
-
-### 4. Identify logical groups
-
-Map the flat absolutely-positioned children into a semantic hierarchy of flex containers, rows, and columns.
-
-### 5. Compute flex gaps from absolute positions
-
-```
-gap = nextElement.top - (currentElement.top + currentElement.height)
-leftPadding = firstChild.left - container.left
-topPadding = firstChild.top - container.top
+```text
+gap = next.top - (current.top + current.height)
+leftPadding = first.left - container.left
+topPadding = first.top - container.top
 ```
 
-**Margins are not supported in Paper.** Use `gap` for uniform spacing, invisible spacer divs for non-uniform spacing, and wrapper divs with different `padding` for varying insets.
+3. Use Paper-compatible layout: `display: flex`, `flex-direction`, `align-items`, `justify-content`, `gap`, and wrapper `padding`.
+4. Do not rely on margins. Use `gap`, padding wrappers, or explicit spacer frames for non-uniform spacing.
+5. Build incrementally. Each `write_html` call should add one visual group or wrapper.
+6. Use separate `write_html` calls whenever clone z-order matters:
 
-### 6. Build incrementally with clones
-
-Each `write_html` call produces ONE visual group. Insert in order — `insert-children` always appends.
-
-```html
-<div style="display: flex; flex-direction: row; align-items: center; gap: 10px;">
-  <x-paper-clone node-id="ORIGINAL_SVG_ID" />
-  <div style="display: flex; flex-direction: column; gap: 4px;">
-    <div style="width: 67px; height: 8px; ..."></div>
-  </div>
-</div>
+```text
+1. write_html container shell
+2. write_html decorative/background clones into shell
+3. write_html content wrappers/divs into shell
+4. update_styles cloned positions and flow offsets
 ```
 
-**When z-order matters, use separate `write_html` calls** for decorative clones and content divs (see Clone Ordering rule).
+7. Delete original children only after the converted children exist, positions are verified, and the screenshot matches. Verify the final child list with `get_children`.
 
-**After cloning, call `update_styles` to:** reset `left`/`top` to `"0px"` on flex-flow clones, and set `boxShadow: "none"` on shadow-hidden clones.
+## Paper-Specific Traps
 
-**`x-paper-clone` creates COPIES.** Originals remain — delete every original that was cloned after building all containers. Verify with `get_children`.
+| Trap | Why It Breaks | Correct Move |
+|---|---|---|
+| Setting position styles on `<x-paper-clone>` | Paper ignores clone position overrides at insertion time | Clone first, then call `update_styles` |
+| Mixing clones and divs in one `write_html` | Paper appends clones after divs, changing z-order | Insert decorative clones in an earlier write |
+| Leaving original clone coordinates | Absolute offsets push flow items away from their flex slots | Reset flow clones to `left: "0px"`, `top: "0px"` |
+| Using `position: relative` for overlapped cards | Paper stacks instead of overlapping in fixed wrappers | Use absolute cards inside a fixed-size wrapper |
+| Keeping hidden source shadows | Flex order can reveal shadows that were covered before | Remove `boxShadow` on clones whose shadow was hidden by a later opaque sibling |
+| Applying `filter` to a flex parent | Filters inherit and affect children unintentionally | Apply filters only to leaf nodes that need them |
+| Cloning reference SVGs blindly | Some SVG clones contain empty text children | Inspect with `get_tree_summary`; delete empty Text children |
 
-**SVG clones from reference artboards may contain ghost text nodes.** After cloning, call `get_tree_summary` on the SVG and delete any empty Text children.
+## Layered Cards
 
-### 7. Screenshot and compare
+Open `references/layered-cards.md` when the design has back cards, floating badges, corner marks, or overlapping elements.
 
-Call `get_screenshot` after building. Compare against the original from step 1.
+Default card stack rules:
 
-## Escape Hatches — Closed
+1. Card stack wrapper is a plain fixed-size frame, not a flex container.
+2. Back card is the first child.
+3. Front card uses `position: absolute; left: 0px; top: 0px`.
+4. Floating badges, labels, and corner marks are inside the stack wrapper as last children.
 
-| You Think | Do This Instead |
-|---|---|
-| "I can approximate this SVG" | No. Clone it with `x-paper-clone`. |
-| "I'll delete everything and rebuild cleanly" | No. Clone existing nodes into new containers. |
-| "This image node is simple, I'll recreate it" | No. Image nodes have unique `backgroundImage` URLs. Clone. |
-| "I'll fix the insertion order later" | No. Plan order before inserting. |
-| "I'll apply grayscale to the flex container" | No. CSS `filter` is inherited. Apply to leaf elements only. |
-| "I'll simulate the back card with box-shadow" | No. Use a real Rectangle element. |
-| "I'll mix clones and divs in one write_html" | No. Paper reorders clones after divs. Use separate calls. |
-| "The clone's box-shadow should be fine" | No. Check if original was hidden behind opaque sibling. |
+## Good And Bad Patterns
 
-## Before marking complete, you MUST:
+**Bad:** Delete an imported SVG, write a new `<svg>`, put it in a flex row, and eyeball the icon.
 
-1. Verify no original SVGs or images were deleted without cloning
-2. Verify insertion order matches visual top-to-bottom order
-3. Verify all cloned nodes needing `position: absolute` actually have it via `get_computed_styles`
-4. Verify overlapping elements are the LAST child of their container
-5. Verify clones in flex flow have `left: 0; top: 0`
-6. Verify shadow-hidden clones have `boxShadow: "none"`
-7. Verify decorative background clones are EARLIER children than content divs via `get_children`
-8. Take a screenshot and compare against the original
-9. Verify CSS filters are on leaf nodes, not flex containers
-10. Verify `position: absolute` only remains for back-cards, overlapping labels, and overlays
+**Good:** Clone the original SVG with `x-paper-clone`, place it in the flex row, reset its flow offsets with `update_styles`, then compare screenshots.
+
+**Bad:** One `write_html` call containing a background clone and content divs.
+
+**Good:** Write the shell, insert background clones in a separate call, then insert content so Paper's clone ordering cannot place backgrounds on top.
+
+## Before Marking Complete, You MUST:
+
+1. Verify the original screenshot and converted screenshot match.
+2. Verify no SVG, image, logo, mask, or complex shape was recreated instead of cloned.
+3. Verify every flow clone has `left: "0px"` and `top: "0px"` via `get_computed_styles`.
+4. Verify every absolute overlay clone has its intended `position`, `left`, and `top` via `get_computed_styles`.
+5. Verify decorative/background clones appear earlier than content with `get_children`.
+6. Verify overlapping badges/labels are last children of their stack/wrapper.
+7. Verify hidden shadows are removed where flex restructuring would reveal them.
+8. Verify filters are on leaf nodes only.
+9. Call `finish_working_on_nodes` when done.
 
 Do not skip any step. A skipped step means visual corruption.
